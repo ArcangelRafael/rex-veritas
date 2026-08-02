@@ -5,12 +5,11 @@ import { Product } from "../models/Product";
 const collectionName = "products";
 
 export const productService = {
-  // Obtener todos los productos activos para la tienda
+  // Para la tienda pública: Solo productos activos[cite: 6]
   getProducts: async () => {
     try {
       const q = query(collection(db, collectionName), where("isActive", "==", true));
       const querySnapshot = await getDocs(q);
-      // Transformamos los documentos de Firebase en instancias de nuestra clase Product
       return querySnapshot.docs.map(Product.fromFirestore);
     } catch (error) {
       console.error("Error obteniendo productos:", error);
@@ -18,7 +17,18 @@ export const productService = {
     }
   },
 
-  // Para el panel de Admin: Agregar un producto nuevo
+  // NUEVO: Para el panel Admin: Obtiene TODOS los productos sin filtro
+  getAllAdminProducts: async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, collectionName));
+      return querySnapshot.docs.map(Product.fromFirestore);
+    } catch (error) {
+      console.error("Error obteniendo todos los productos:", error);
+      throw error;
+    }
+  },
+
+  // Para el panel de Admin: Agregar un producto nuevo[cite: 6]
   addProduct: async (productData) => {
     try {
       const product = new Product(productData);
@@ -30,7 +40,7 @@ export const productService = {
     }
   },
 
-  // Para el panel de Admin: Editar un producto (ej. pausar su venta o cambiar precio)
+  // Para el panel de Admin: Editar un producto (ej. pausar su venta o cambiar precio)[cite: 6]
   updateProduct: async (productId, updates) => {
     try {
       const productRef = doc(db, collectionName, productId);

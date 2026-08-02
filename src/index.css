@@ -1,3 +1,10 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    /* Aquí aplicamos el color de fondo claro normal, y su versión oscura con 'dark:' */
+    @apply bg-gray-50 text-slate-900 transition-colors duration-300 dark:bg-slate-900 dark:text-gray-100;
+  }
+}

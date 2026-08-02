@@ -11,7 +11,8 @@ import { AdminDashboard } from './pages/AdminDashboard';
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+      {/* AQUÍ ESTÁ LA MAGIA: Agregamos las clases dark: y una transición suave */}
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-950 font-sans text-gray-900 dark:text-gray-100 transition-colors duration-300">
         {/* El Navbar se mostrará en todas las rutas */}
         <Navbar />
         

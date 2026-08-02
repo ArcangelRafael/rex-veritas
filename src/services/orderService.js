@@ -6,7 +6,6 @@ const ordersCollection = "orders";
 const productsCollection = "products";
 
 export const orderService = {
-  // 1. Crear pedido con validación estricta de stock
   createOrder: async (orderData) => {
     try {
       const orderId = await runTransaction(db, async (transaction) => {
@@ -31,7 +30,6 @@ export const orderService = {
 
         return newOrderRef.id;
       });
-
       return orderId;
     } catch (error) {
       console.error("Error al procesar la compra:", error);
@@ -39,12 +37,10 @@ export const orderService = {
     }
   },
 
-  // 2. Obtener todos los pedidos y ordenarlos del más nuevo al más viejo
   getOrders: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, ordersCollection));
       const orders = querySnapshot.docs.map(Order.fromFirestore);
-      // Ordenamos por fecha descendente usando JavaScript
       return orders.sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
       console.error("Error obteniendo pedidos:", error);
@@ -52,7 +48,6 @@ export const orderService = {
     }
   },
 
-  // 3. Marcar pedido como pagado/entregado
   completeOrder: async (orderId) => {
     try {
       const orderRef = doc(db, ordersCollection, orderId);
@@ -63,15 +58,12 @@ export const orderService = {
     }
   },
 
-  // 4. Cancelar pedido y DEVOLVER stock de forma segura (Nivel Senior)
   cancelOrderAndReturnStock: async (orderId, items) => {
     try {
       await runTransaction(db, async (transaction) => {
-        // A. Leer el stock actual de los productos
         const productRefs = items.map(item => doc(db, productsCollection, item.productId));
         const productDocs = await Promise.all(productRefs.map(ref => transaction.get(ref)));
 
-        // B. Sumar el stock que el cliente había apartado
         productDocs.forEach((productDoc, index) => {
           if (productDoc.exists()) {
             const currentStock = productDoc.data().stock;
@@ -80,12 +72,54 @@ export const orderService = {
           }
         });
 
-        // C. Marcar el pedido como cancelado
         const orderRef = doc(db, ordersCollection, orderId);
         transaction.update(orderRef, { status: 'CANCELLED' });
       });
     } catch (error) {
       console.error("Error al cancelar y devolver stock:", error);
+      throw error;
+    }
+  },
+
+  // NUEVO: Método para modificar cantidades de un pedido existente
+  modifyOrderItems: async (orderId, oldItems, newItems) => {
+    try {
+      await runTransaction(db, async (transaction) => {
+        // 1. Obtener IDs únicos de todos los productos involucrados
+        const productIds = new Set([...oldItems.map(i => i.productId), ...newItems.map(i => i.productId)]);
+        const productRefs = {};
+        const productDocs = {};
+
+        // 2. Leer todos los productos de Firestore
+        for (const pid of productIds) {
+          productRefs[pid] = doc(db, productsCollection, pid);
+          productDocs[pid] = await transaction.get(productRefs[pid]);
+        }
+
+        // 3. Calcular la diferencia matemática y validar stock
+        for (const pid of productIds) {
+          const oldItem = oldItems.find(i => i.productId === pid) || { quantity: 0 };
+          const newItem = newItems.find(i => i.productId === pid) || { quantity: 0 };
+          
+          const difference = newItem.quantity - oldItem.quantity; // Si es positivo, sacamos más stock. Si es negativo, devolvemos stock.
+
+          if (difference !== 0) {
+            if (!productDocs[pid].exists()) throw new Error(`El producto con ID ${pid} ya no existe en la BD.`);
+            const currentStock = productDocs[pid].data().stock;
+            
+            if (currentStock < difference) throw new Error(`Stock insuficiente para agregar más unidades del producto ID: ${pid}`);
+            
+            transaction.update(productRefs[pid], { stock: currentStock - difference });
+          }
+        }
+
+        // 4. Calcular el nuevo total y actualizar el documento de la orden
+        const newTotalAmount = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const orderRef = doc(db, ordersCollection, orderId);
+        transaction.update(orderRef, { items: newItems, totalAmount: newTotalAmount });
+      });
+    } catch (error) {
+      console.error("Error al modificar pedido:", error);
       throw error;
     }
   }
