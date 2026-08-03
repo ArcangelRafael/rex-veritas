@@ -40,23 +40,20 @@ export const Home = () => {
     fetchProducts();
   }, []);
 
-  // --- EXTRACCIÓN DINÁMICA DE OPCIONES PARA LOS SELECTS ---
+  // --- EXTRACCIÓN DINÁMICA DE OPCIONES ---
   const brands = useMemo(() => {
     const allBrands = products.flatMap(p => p.brands?.length ? p.brands : [p.brand]);
     return ['ALL', ...new Set(allBrands.filter(Boolean))];
   }, [products]);
   
   const sizes = useMemo(() => ['ALL', ...new Set(products.map(p => p.size).filter(Boolean))], [products]);
-  
   const categories = useMemo(() => ['ALL', ...new Set(products.map(p => p.category).filter(Boolean))], [products]);
-  
   const qualities = useMemo(() => ['ALL', ...new Set(products.map(p => p.quality).filter(Boolean))], [products]);
 
-  // --- MOTOR DE BÚSQUEDA Y FILTRADO ---
+  // --- BÚSQUEDA Y FILTRADO ---
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const productBrands = product.brands?.length ? product.brands : [product.brand];
-      
       const matchSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchBrand = selectedBrand === 'ALL' || productBrands.includes(selectedBrand);
       const matchSize = selectedSize === 'ALL' || product.size === selectedSize;
@@ -108,7 +105,6 @@ export const Home = () => {
     setZoomOrigin(`${x}% ${y}%`);
   };
 
-  // --- LIMPIEZA DE FILTROS ---
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedBrand('ALL');
@@ -146,7 +142,6 @@ export const Home = () => {
             <p className="text-gray-500 dark:text-gray-400 mt-1">Encuentra tus favoritos más rápido.</p>
           </div>
 
-          {/* BARRA DE BÚSQUEDA LIBRE */}
           <div className="relative w-full md:w-72 lg:w-96">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500" />
             <input 
@@ -159,9 +154,7 @@ export const Home = () => {
           </div>
         </div>
 
-        {/* SELECTORES DE FILTROS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Producto</label>
             <select
@@ -205,10 +198,8 @@ export const Home = () => {
               {sizes.map(size => <option key={size} value={size}>{size === 'ALL' ? 'Todas' : size}</option>)}
             </select>
           </div>
-
         </div>
 
-        {/* BOTÓN LIMPIAR SI HAY FILTROS ACTIVOS */}
         {(searchTerm !== '' || selectedBrand !== 'ALL' || selectedSize !== 'ALL' || selectedCategory !== 'ALL' || selectedQuality !== 'ALL') && (
           <div className="mt-4 flex justify-end">
              <button onClick={clearFilters} className="text-sm font-bold text-red-500 hover:text-red-700 transition-colors">
@@ -216,7 +207,6 @@ export const Home = () => {
              </button>
           </div>
         )}
-
       </div>
 
       {/* GRILLA DE PRODUCTOS */}
@@ -237,18 +227,20 @@ export const Home = () => {
         </div>
       )}
 
-      {/* MODAL DE ZOOM (Se mantiene idéntico, 100% oscuro y funcional) */}
+      {/* MODAL DE PRODUCTO ACTUALIZADO (ESTRUCTURA RÍGIDA) */}
       {selectedProduct && (
         <div 
           onClick={closeModal} 
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-70 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-80 backdrop-blur-sm"
         >
           <div 
             onClick={(e) => e.stopPropagation()} 
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200 transition-colors"
+            // NUEVO: Altura fija obligatoria md:h-[600px] para estandarizar el tamaño de todas las tarjetas
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] md:h-[600px] flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200 transition-colors"
           >
+            {/* PANEL IZQUIERDO: IMAGEN */}
             <div 
-              className={`w-full md:w-1/2 h-64 md:h-auto bg-gray-100 dark:bg-slate-800 relative overflow-hidden flex-shrink-0 ${isZoomed ? 'cursor-move' : 'cursor-zoom-in'} group transition-colors`} 
+              className={`w-full md:w-1/2 h-64 md:h-full bg-gray-100 dark:bg-slate-800 relative overflow-hidden flex-shrink-0 ${isZoomed ? 'cursor-move' : 'cursor-zoom-in'} group transition-colors`} 
               onClick={toggleZoom}
               onMouseMove={handleMouseMove}
               onMouseLeave={() => setZoomOrigin('50% 50%')}
@@ -288,38 +280,48 @@ export const Home = () => {
               </div>
             </div>
 
-            <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col overflow-y-auto">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <span className="text-sm font-bold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1 block">
-                    {selectedProduct.brands?.length > 1 ? selectedProduct.brands.join(' X ') : (selectedProduct.brand || 'Sin Marca')}
-                  </span>
-                  <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white">{selectedProduct.name}</h2>
-                  
-                  {/* Detalles adicionales para el cliente */}
-                  <div className="flex space-x-2 mt-2">
-                    {selectedProduct.category && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.category}</span>}
-                    {selectedProduct.quality && selectedProduct.quality !== 'N/A' && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.quality}</span>}
+            {/* PANEL DERECHO: DETALLES Y BOTONES */}
+            <div className="w-full md:w-1/2 flex flex-col flex-1 min-h-0 p-5 md:p-8 bg-white dark:bg-slate-900">
+              
+              {/* BLOQUE SUPERIOR (Fijo) */}
+              <div className="flex-shrink-0">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1 block">
+                      {selectedProduct.brands?.length > 1 ? selectedProduct.brands.join(' X ') : (selectedProduct.brand || 'Sin Marca')}
+                    </span>
+                    <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white leading-tight">{selectedProduct.name}</h2>
+                    
+                    <div className="flex space-x-2 mt-2">
+                      {selectedProduct.category && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.category}</span>}
+                      {selectedProduct.quality && selectedProduct.quality !== 'N/A' && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.quality}</span>}
+                    </div>
                   </div>
+                  <button onClick={closeModal} className="p-2 bg-gray-100 dark:bg-slate-800 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors flex-shrink-0">
+                    <X className="h-6 w-6" />
+                  </button>
                 </div>
-                <button onClick={closeModal} className="p-2 bg-gray-100 dark:bg-slate-800 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors">
-                  <X className="h-6 w-6" />
-                </button>
+
+                <div className="flex items-center space-x-4 mb-6">
+                  <span className="text-3xl font-black text-slate-900 dark:text-white">${selectedProduct.price.toLocaleString('es-MX')}</span>
+                  <span className="bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 px-3 py-1 rounded-full text-sm font-bold">
+                    Talla: {selectedProduct.size}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex items-center space-x-4 mb-6">
-                <span className="text-3xl font-black text-slate-900 dark:text-white">${selectedProduct.price.toLocaleString('es-MX')}</span>
-                <span className="bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 px-3 py-1 rounded-full text-sm font-bold">
-                  Talla: {selectedProduct.size}
-                </span>
+              {/* BLOQUE DE DESCRIPCIÓN (Scrollable) */}
+              {/* NUEVO: flex-1 con overflow-y-auto confina el texto excesivo dentro del contenedor */}
+              <div className="flex-1 overflow-y-auto pr-3 mb-4">
+                {/* sticky top-0 hace que el título de la descripción no se mueva al scrollear */}
+                <h4 className="text-gray-900 dark:text-white font-bold mb-2 sticky top-0 bg-white dark:bg-slate-900 pb-2">Descripción del Producto</h4>
+                <p className="whitespace-pre-line text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                  {selectedProduct.description || 'Este producto no cuenta con descripción detallada en este momento.'}
+                </p>
               </div>
 
-              <div className="prose prose-sm text-gray-600 dark:text-gray-400 mb-8 flex-grow">
-                <h4 className="text-gray-900 dark:text-white font-bold mb-2">Descripción del Producto</h4>
-                <p className="whitespace-pre-line">{selectedProduct.description || 'Este producto no cuenta con descripción detallada en este momento.'}</p>
-              </div>
-
-              <div className="mt-auto pt-6 border-t border-gray-100 dark:border-slate-800">
+              {/* BLOQUE INFERIOR DE ACCIONES (Fijo) */}
+              <div className="flex-shrink-0 pt-5 border-t border-gray-100 dark:border-slate-800">
                 {(() => {
                   const cartItem = cart.find(item => item.productId === selectedProduct.id);
                   const quantityInCart = cartItem ? cartItem.quantity : 0;

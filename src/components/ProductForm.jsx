@@ -198,7 +198,7 @@ export const ProductForm = () => {
 
         {/* FECHA DE LANZAMIENTO */}
         <div className="bg-gray-50 dark:bg-slate-800/50 p-5 rounded-xl border border-gray-200 dark:border-slate-700 transition-colors">
-          <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center space-x-2">
+              <label className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center space-x-2">
             <Calendar className="h-4 w-4 text-blue-500" />
             <span>Fecha de Lanzamiento</span>
           </label>
