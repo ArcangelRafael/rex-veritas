@@ -1,25 +1,27 @@
 export class Product {
-  constructor({ id, name, brand, brands, size, price, stock, imageUrl, imageUrls, description, isActive, isBoosted }) {
+  constructor({ id, name, brand, brands, size, price, stock, imageUrl, imageUrls, description, isActive, isBoosted, category, quality, releaseDate }) {
     this.id = id || null;
     this.name = name;
     
-    // Soportar múltiples marcas (colaboraciones)
     this.brands = Array.isArray(brands) ? brands : (brand ? [brand] : ['']);
-    this.brand = this.brands.length > 0 ? this.brands[0] : ''; // Retrocompatibilidad para la tienda
+    this.brand = this.brands.length > 0 ? this.brands[0] : ''; 
     
     this.size = size;
     this.price = Number(price);
     this.stock = Number(stock);
     
-    // Soportar múltiples imágenes
     this.imageUrls = Array.isArray(imageUrls) ? imageUrls : (imageUrl ? [imageUrl] : ['']);
-    this.imageUrl = this.imageUrls.length > 0 ? this.imageUrls[0] : ''; // Retrocompatibilidad para la tienda
+    this.imageUrl = this.imageUrls.length > 0 ? this.imageUrls[0] : ''; 
     
     this.description = description || '';
     this.isActive = isActive !== undefined ? isActive : true;
-    
-    // NUEVO: Campo para Boost de marketing
     this.isBoosted = isBoosted !== undefined ? isBoosted : false; 
+    
+    this.category = category || 'Gorra';
+    this.quality = quality || 'N/A';
+    
+    // Campo para fecha de lanzamiento programada (ISO String)
+    this.releaseDate = releaseDate || new Date().toISOString();
   }
 
   hasSufficientStock(quantity) {
@@ -29,16 +31,19 @@ export class Product {
   toFirestore() {
     return {
       name: this.name,
-      brand: this.brand, // Guardamos el principal
-      brands: this.brands, // Guardamos la lista completa
+      brand: this.brand, 
+      brands: this.brands, 
       size: this.size,
       price: this.price,
       stock: this.stock,
-      imageUrl: this.imageUrl, // Guardamos la principal
-      imageUrls: this.imageUrls, // Guardamos la lista completa
+      imageUrl: this.imageUrl, 
+      imageUrls: this.imageUrls, 
       description: this.description,
       isActive: this.isActive,
-      isBoosted: this.isBoosted, // Guardamos el estado del Boost
+      isBoosted: this.isBoosted, 
+      category: this.category,
+      quality: this.quality,
+      releaseDate: this.releaseDate,
       updatedAt: new Date()
     };
   }

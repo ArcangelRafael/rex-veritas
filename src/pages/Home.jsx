@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { productService } from '../services/productService';
 import { ProductCard } from '../components/ProductCard';
 import { useCart } from '../context/CartContext';
-import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus } from 'lucide-react';
+import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search } from 'lucide-react';
 
 export const Home = () => {
   const [products, setProducts] = useState([]);
@@ -11,9 +11,14 @@ export const Home = () => {
   
   const { addItem, updateQuantity, cart } = useCart();
 
+  // --- ESTADOS DE FILTROS ---
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('ALL');
   const [selectedSize, setSelectedSize] = useState('ALL');
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [selectedQuality, setSelectedQuality] = useState('ALL');
 
+  // --- ESTADOS DEL MODAL ---
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [modalImgIndex, setModalImgIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
@@ -35,22 +40,34 @@ export const Home = () => {
     fetchProducts();
   }, []);
 
+  // --- EXTRACCIÓN DINÁMICA DE OPCIONES PARA LOS SELECTS ---
   const brands = useMemo(() => {
     const allBrands = products.flatMap(p => p.brands?.length ? p.brands : [p.brand]);
     return ['ALL', ...new Set(allBrands.filter(Boolean))];
   }, [products]);
   
-  const sizes = useMemo(() => ['ALL', ...new Set(products.map(p => p.size))], [products]);
+  const sizes = useMemo(() => ['ALL', ...new Set(products.map(p => p.size).filter(Boolean))], [products]);
+  
+  const categories = useMemo(() => ['ALL', ...new Set(products.map(p => p.category).filter(Boolean))], [products]);
+  
+  const qualities = useMemo(() => ['ALL', ...new Set(products.map(p => p.quality).filter(Boolean))], [products]);
 
+  // --- MOTOR DE BÚSQUEDA Y FILTRADO ---
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const productBrands = product.brands?.length ? product.brands : [product.brand];
+      
+      const matchSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchBrand = selectedBrand === 'ALL' || productBrands.includes(selectedBrand);
       const matchSize = selectedSize === 'ALL' || product.size === selectedSize;
-      return matchBrand && matchSize;
-    });
-  }, [products, selectedBrand, selectedSize]);
+      const matchCategory = selectedCategory === 'ALL' || product.category === selectedCategory;
+      const matchQuality = selectedQuality === 'ALL' || product.quality === selectedQuality;
 
+      return matchSearch && matchBrand && matchSize && matchCategory && matchQuality;
+    });
+  }, [products, searchTerm, selectedBrand, selectedSize, selectedCategory, selectedQuality]);
+
+  // --- FUNCIONES DEL MODAL ---
   const openModal = (product) => {
     setSelectedProduct(product);
     setModalImgIndex(0);
@@ -91,6 +108,15 @@ export const Home = () => {
     setZoomOrigin(`${x}% ${y}%`);
   };
 
+  // --- LIMPIEZA DE FILTROS ---
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSelectedBrand('ALL');
+    setSelectedSize('ALL');
+    setSelectedCategory('ALL');
+    setSelectedQuality('ALL');
+  };
+
   if (loading) {
     return (
       <div className="min-h-[50vh] flex flex-col items-center justify-center space-y-4">
@@ -111,36 +137,89 @@ export const Home = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 relative">
       
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors">
-        <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">Catálogo de Productos</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Encuentra tus gorras y playeras favoritas.</p>
+      {/* CABECERA Y PANEL DE FILTROS */}
+      <div className="mb-8 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors">
+        
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">Catálogo de Productos</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Encuentra tus favoritos más rápido.</p>
+          </div>
+
+          {/* BARRA DE BÚSQUEDA LIBRE */}
+          <div className="relative w-full md:w-72 lg:w-96">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500" />
+            <input 
+              type="text" 
+              placeholder="Buscar por nombre..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+            />
+          </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4">
+        {/* SELECTORES DE FILTROS */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          
+          <div>
+            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Producto</label>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+            >
+              {categories.map(cat => <option key={cat} value={cat}>{cat === 'ALL' ? 'Todos' : cat}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Calidad</label>
+            <select
+              value={selectedQuality}
+              onChange={(e) => setSelectedQuality(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+            >
+              {qualities.map(q => <option key={q} value={q}>{q === 'ALL' ? 'Todas' : q}</option>)}
+            </select>
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Marca</label>
             <select
               value={selectedBrand}
               onChange={(e) => setSelectedBrand(e.target.value)}
-              className="block w-full sm:w-40 px-4 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
             >
               {brands.map(brand => <option key={brand} value={brand}>{brand === 'ALL' ? 'Todas' : brand}</option>)}
             </select>
           </div>
+
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Talla</label>
             <select
               value={selectedSize}
               onChange={(e) => setSelectedSize(e.target.value)}
-              className="block w-full sm:w-40 px-4 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
             >
               {sizes.map(size => <option key={size} value={size}>{size === 'ALL' ? 'Todas' : size}</option>)}
             </select>
           </div>
+
         </div>
+
+        {/* BOTÓN LIMPIAR SI HAY FILTROS ACTIVOS */}
+        {(searchTerm !== '' || selectedBrand !== 'ALL' || selectedSize !== 'ALL' || selectedCategory !== 'ALL' || selectedQuality !== 'ALL') && (
+          <div className="mt-4 flex justify-end">
+             <button onClick={clearFilters} className="text-sm font-bold text-red-500 hover:text-red-700 transition-colors">
+               Limpiar todos los filtros
+             </button>
+          </div>
+        )}
+
       </div>
 
+      {/* GRILLA DE PRODUCTOS */}
       {filteredProducts.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredProducts.map(product => (
@@ -151,13 +230,14 @@ export const Home = () => {
         <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors">
           <SearchX className="h-16 w-16 text-gray-400 dark:text-slate-600 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-gray-900 dark:text-white">No encontramos productos</h3>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">Intenta cambiar los filtros de búsqueda.</p>
-          <button onClick={() => { setSelectedBrand('ALL'); setSelectedSize('ALL'); }} className="mt-4 text-blue-600 dark:text-blue-400 font-medium hover:underline">
+          <p className="text-gray-500 dark:text-gray-400 mt-2">Intenta cambiar o limpiar los filtros de búsqueda.</p>
+          <button onClick={clearFilters} className="mt-4 text-blue-600 dark:text-blue-400 font-medium hover:underline">
             Limpiar filtros
           </button>
         </div>
       )}
 
+      {/* MODAL DE ZOOM (Se mantiene idéntico, 100% oscuro y funcional) */}
       {selectedProduct && (
         <div 
           onClick={closeModal} 
@@ -215,6 +295,12 @@ export const Home = () => {
                     {selectedProduct.brands?.length > 1 ? selectedProduct.brands.join(' X ') : (selectedProduct.brand || 'Sin Marca')}
                   </span>
                   <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white">{selectedProduct.name}</h2>
+                  
+                  {/* Detalles adicionales para el cliente */}
+                  <div className="flex space-x-2 mt-2">
+                    {selectedProduct.category && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.category}</span>}
+                    {selectedProduct.quality && selectedProduct.quality !== 'N/A' && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.quality}</span>}
+                  </div>
                 </div>
                 <button onClick={closeModal} className="p-2 bg-gray-100 dark:bg-slate-800 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors">
                   <X className="h-6 w-6" />

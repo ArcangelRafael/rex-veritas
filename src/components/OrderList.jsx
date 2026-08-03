@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { orderService } from '../services/orderService';
-import { Clock, CheckCircle2, XCircle, Package, Loader2, Copy, ChevronDown, ChevronUp, Search, Edit, Save, Plus, Minus, Trash2, AlertTriangle, Info } from 'lucide-react';
+import { productService } from '../services/productService'; 
+import { Clock, CheckCircle2, XCircle, Package, Loader2, Copy, ChevronDown, ChevronUp, Search, Edit, Save, Plus, Minus, Trash2, AlertTriangle, Info, X } from 'lucide-react';
 
 export const OrderList = () => {
   const [orders, setOrders] = useState([]);
+  const [catalog, setCatalog] = useState({}); 
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [activeTab, setActiveTab] = useState('PENDING'); 
@@ -15,12 +17,18 @@ export const OrderList = () => {
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [editItems, setEditItems] = useState([]);
 
-  // --- SISTEMA DE MODALS (Reemplazo de Alerts) ---
+  // --- MODALES ---
   const [modalConfig, setModalConfig] = useState({
     isOpen: false,
-    type: 'success', // 'success' | 'error' | 'confirm'
+    type: 'success', 
     message: '',
     onConfirm: null
+  });
+
+  const [imageModal, setImageModal] = useState({
+    isOpen: false,
+    src: '',
+    title: ''
   });
 
   const closeModal = () => setModalConfig({ ...modalConfig, isOpen: false });
@@ -28,13 +36,22 @@ export const OrderList = () => {
   const showError = (msg) => setModalConfig({ isOpen: true, type: 'error', message: msg, onConfirm: null });
   const showConfirm = (msg, onConfirmCallback) => setModalConfig({ isOpen: true, type: 'confirm', message: msg, onConfirm: onConfirmCallback });
 
-  // ------------------------------------------------
-
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const data = await orderService.getOrders();
-      setOrders(data);
+      const [ordersData, productsData] = await Promise.all([
+        orderService.getOrders(),
+        productService.getProducts()
+      ]);
+      
+      setOrders(ordersData);
+
+      const catalogMap = {};
+      productsData.forEach(p => {
+        catalogMap[p.id] = p; 
+      });
+      setCatalog(catalogMap);
+
     } catch (error) {
       showError("Error crítico al cargar los pedidos desde la base de datos.");
     } finally {
@@ -79,7 +96,22 @@ export const OrderList = () => {
   };
 
   const handleCopy = (order) => {
-    const text = `📦 PEDIDO: ${order.id}\n📅 Fecha: ${order.createdAt.toLocaleDateString('es-MX')} ${order.createdAt.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}\n👤 Cliente: ${order.customerName}\n📱 Tel: ${order.customerPhone}\n\n🛒 ARTÍCULOS:\n${order.items.map(i => `- ${i.quantity}x ${i.name} (ID: ${i.productId})`).join('\n')}\n\n💰 TOTAL: $${order.totalAmount.toLocaleString('es-MX')}`;
+    const formattedItems = order.items.map(item => {
+      const liveProduct = catalog[item.productId] || {};
+      const category = item.category || liveProduct.category || 'Gorra';
+      const size = item.size || liveProduct.size || 'N/A';
+      
+      // Si no hay calidad, lo dejamos vacío para que no imprima [N/A]
+      const quality = item.quality || liveProduct.quality || '';
+      const qualityText = quality && quality !== 'N/A' ? ` [${quality}]` : '';
+      
+      const brandsArr = (item.brands && item.brands.length > 0) ? item.brands : (liveProduct.brands || []);
+      const brandsText = brandsArr.length > 0 ? brandsArr.join(' X ') : (liveProduct.brand || 'Sin Marca');
+      
+      return `- ${item.quantity}x [${category}] ${item.name} [${size}] [${brandsText}]${qualityText} (ID: ${item.productId})`;
+    }).join('\n');
+
+    const text = `📦 PEDIDO: ${order.id}\n📅 Fecha: ${order.createdAt.toLocaleDateString('es-MX')} ${order.createdAt.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}\n👤 Cliente: ${order.customerName}\n📱 Tel: ${order.customerPhone}\n\n🛒 ARTÍCULOS:\n${formattedItems}\n\n💰 TOTAL: $${order.totalAmount.toLocaleString('es-MX')}`;
     navigator.clipboard.writeText(text);
     showSuccess('¡Información copiada al portapapeles!');
   };
@@ -127,9 +159,9 @@ export const OrderList = () => {
   };
 
   const statusStyles = {
-    PENDING: { color: 'text-yellow-600', bg: 'bg-yellow-50', icon: Clock, label: 'Pendiente' },
-    COMPLETED: { color: 'text-green-600', bg: 'bg-green-50', icon: CheckCircle2, label: 'Finalizado' },
-    CANCELLED: { color: 'text-red-600', bg: 'bg-red-50', icon: XCircle, label: 'Cancelado' }
+    PENDING: { color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/20', icon: Clock, label: 'Pendiente' },
+    COMPLETED: { color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/20', icon: CheckCircle2, label: 'Finalizado' },
+    CANCELLED: { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20', icon: XCircle, label: 'Cancelado' }
   };
 
   const baseOrders = activeTab === 'PENDING' 
@@ -149,46 +181,64 @@ export const OrderList = () => {
   return (
     <div className="space-y-6 relative">
       
-      {/* --- RENDER DEL MODAL --- */}
+      {/* --- MODAL DE IMAGEN --- */}
+      {imageModal.isOpen && (
+        <div 
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black bg-opacity-70 backdrop-blur-sm transition-opacity"
+          onClick={() => setImageModal({ isOpen: false, src: '', title: '' })}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-2xl max-w-xl w-full relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              onClick={() => setImageModal({ isOpen: false, src: '', title: '' })}
+              className="absolute -top-3 -right-3 md:-top-4 md:-right-4 bg-slate-900 dark:bg-slate-700 text-white p-2 rounded-full shadow-lg hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors z-10"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="bg-gray-100 dark:bg-slate-800 rounded-xl overflow-hidden flex items-center justify-center min-h-[300px]">
+              {imageModal.src ? (
+                <img src={imageModal.src} alt={imageModal.title} className="w-full h-auto object-contain max-h-[70vh]" />
+              ) : (
+                <span className="text-gray-400">Imagen no disponible</span>
+              )}
+            </div>
+            <p className="text-center font-bold text-gray-900 dark:text-white mt-4 mb-2 px-4">{imageModal.title}</p>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL GLOBAL DE ALERTAS --- */}
       {modalConfig.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black bg-opacity-40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800">
             <div className="flex flex-col items-center text-center">
-              
               {modalConfig.type === 'error' && <AlertTriangle className="h-14 w-14 text-red-500 mb-4" />}
               {modalConfig.type === 'success' && <CheckCircle2 className="h-14 w-14 text-green-500 mb-4" />}
               {modalConfig.type === 'confirm' && <Info className="h-14 w-14 text-blue-500 mb-4" />}
-
-              <p className="text-gray-800 font-medium text-lg mb-6">{modalConfig.message}</p>
-
+              <p className="text-gray-800 dark:text-white font-medium text-lg mb-6">{modalConfig.message}</p>
               <div className="flex w-full space-x-3">
                 {modalConfig.type === 'confirm' ? (
                   <>
-                    <button onClick={closeModal} className="flex-1 py-2.5 px-4 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors">
-                      Cancelar
-                    </button>
-                    <button onClick={modalConfig.onConfirm} className="flex-1 py-2.5 px-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors">
-                      Confirmar
-                    </button>
+                    <button onClick={closeModal} className="flex-1 py-2.5 px-4 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors">Cancelar</button>
+                    <button onClick={modalConfig.onConfirm} className="flex-1 py-2.5 px-4 bg-slate-900 dark:bg-blue-600 text-white font-bold rounded-xl hover:bg-slate-800 dark:hover:bg-blue-700 transition-colors">Confirmar</button>
                   </>
                 ) : (
-                  <button onClick={closeModal} className="w-full py-2.5 px-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors">
-                    Entendido
-                  </button>
+                  <button onClick={closeModal} className="w-full py-2.5 px-4 bg-slate-900 dark:bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors">Entendido</button>
                 )}
               </div>
             </div>
           </div>
         </div>
       )}
-      {/* ------------------------- */}
 
+      {/* Controles de búsqueda */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
         <div className="flex items-center space-x-2">
-          <Package className="h-6 w-6 text-slate-700" />
-          <h2 className="text-xl font-bold text-gray-800">Gestor de Pedidos</h2>
+          <Package className="h-6 w-6 text-slate-700 dark:text-slate-300" />
+          <h2 className="text-xl font-bold text-gray-800 dark:text-white">Gestor de Pedidos</h2>
         </div>
-        
         <div className="flex items-center space-x-2 w-full md:w-auto">
           <div className="relative w-full md:w-64">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -197,13 +247,13 @@ export const OrderList = () => {
               placeholder="Buscar por ID, Cliente o Artículo..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 outline-none"
+              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors"
             />
           </div>
           <select 
             value={sortOrder} 
             onChange={(e) => setSortOrder(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-900 outline-none bg-white"
+            className="border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors"
           >
             <option value="desc">Más nuevos</option>
             <option value="asc">Más viejos</option>
@@ -211,11 +261,12 @@ export const OrderList = () => {
         </div>
       </div>
 
-      <div className="flex space-x-4 border-b border-gray-200 mb-6">
+      {/* Tabs */}
+      <div className="flex space-x-4 border-b border-gray-200 dark:border-slate-800 mb-6 transition-colors">
         <button
           onClick={() => { setActiveTab('PENDING'); setSearchTerm(''); }}
           className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${
-            activeTab === 'PENDING' ? 'border-slate-900 text-slate-900' : 'border-transparent text-gray-500 hover:text-gray-800'
+            activeTab === 'PENDING' ? 'border-slate-900 dark:border-blue-500 text-slate-900 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
           Pendientes ({orders.filter(o => o.status === 'PENDING').length})
@@ -223,7 +274,7 @@ export const OrderList = () => {
         <button
           onClick={() => { setActiveTab('CONCLUIDAS'); setSearchTerm(''); }}
           className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${
-            activeTab === 'CONCLUIDAS' ? 'border-slate-900 text-slate-900' : 'border-transparent text-gray-500 hover:text-gray-800'
+            activeTab === 'CONCLUIDAS' ? 'border-slate-900 dark:border-blue-500 text-slate-900 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
           Concluidas ({orders.filter(o => o.status !== 'PENDING').length})
@@ -232,11 +283,11 @@ export const OrderList = () => {
 
       {loading ? (
         <div className="flex justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-900" />
+          <Loader2 className="h-8 w-8 animate-spin text-slate-900 dark:text-white" />
         </div>
       ) : displayOrders.length === 0 ? (
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 text-center text-gray-500">
-          <Package className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 text-center text-gray-500 dark:text-gray-400 transition-colors">
+          <Package className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-slate-700" />
           <p>No hay pedidos que coincidan con la búsqueda.</p>
         </div>
       ) : (
@@ -253,20 +304,20 @@ export const OrderList = () => {
               : order.totalAmount;
 
             return (
-              <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-all duration-200">
+              <div key={order.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden transition-all duration-200">
                 
                 <div 
                   onClick={() => toggleExpand(order.id)}
-                  className={`px-6 py-4 cursor-pointer hover:bg-opacity-80 transition-colors border-b border-gray-100 flex justify-between items-center ${statusStyles[order.status].bg}`}
+                  className={`px-6 py-4 cursor-pointer hover:bg-opacity-80 transition-colors border-b border-gray-100 dark:border-slate-800/50 flex justify-between items-center ${statusStyles[order.status].bg}`}
                 >
                   <div className="flex items-center space-x-4">
-                    <button className="p-1 hover:bg-black hover:bg-opacity-10 rounded-full transition-colors">
-                      {isExpanded ? <ChevronUp className="h-5 w-5 text-gray-600" /> : <ChevronDown className="h-5 w-5 text-gray-600" />}
+                    <button className="p-1 hover:bg-black hover:bg-opacity-10 dark:hover:bg-white dark:hover:bg-opacity-10 rounded-full transition-colors">
+                      {isExpanded ? <ChevronUp className="h-5 w-5 text-gray-600 dark:text-gray-300" /> : <ChevronDown className="h-5 w-5 text-gray-600 dark:text-gray-300" />}
                     </button>
                     <div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">ID: {order.id}</span>
-                        <button onClick={(e) => { e.stopPropagation(); handleCopy(order); }} className="text-gray-400 hover:text-slate-900" title="Copiar Datos">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID: {order.id}</span>
+                        <button onClick={(e) => { e.stopPropagation(); handleCopy(order); }} className="text-gray-400 hover:text-slate-900 dark:hover:text-white transition-colors" title="Copiar Datos">
                           <Copy className="h-4 w-4" />
                         </button>
                       </div>
@@ -279,73 +330,108 @@ export const OrderList = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="block text-sm font-medium text-gray-600">
+                    <span className="block text-sm font-medium text-gray-600 dark:text-gray-400">
                       {order.createdAt.toLocaleDateString('es-MX')} - {order.createdAt.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}
                     </span>
-                    <span className="block text-lg font-extrabold text-slate-900">
+                    <span className="block text-lg font-extrabold text-slate-900 dark:text-white">
                       ${currentTotal.toLocaleString('es-MX')}
                     </span>
                   </div>
                 </div>
 
                 {isExpanded && (
-                  <div className="p-6 bg-white animate-in slide-in-from-top-2">
+                  <div className="p-6 bg-white dark:bg-slate-900 animate-in slide-in-from-top-2">
                     <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">Datos del Cliente</p>
-                        <p className="font-bold text-gray-900">{order.customerName}</p>
-                        <p className="text-sm text-gray-600 font-medium">WhatsApp: {order.customerPhone}</p>
-                        <p className="text-sm text-gray-600 font-medium">Email: {order.customerEmail}</p>
+                        <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Datos del Cliente</p>
+                        <p className="font-bold text-gray-900 dark:text-white">{order.customerName}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">WhatsApp: {order.customerPhone}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">Email: {order.customerEmail}</p>
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">Comentarios</p>
-                        <p className="text-sm text-gray-700 italic bg-gray-50 p-2 rounded border border-gray-100">
+                        <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Comentarios</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 italic bg-gray-50 dark:bg-slate-800 p-2 rounded border border-gray-100 dark:border-slate-700">
                           {order.comments || "Sin comentarios."}
                         </p>
                       </div>
                     </div>
 
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                       <div className="flex justify-between items-center mb-3">
-                        <p className="text-xs font-bold text-gray-500 uppercase">Artículos solicitados:</p>
+                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Artículos solicitados:</p>
                         {order.status === 'PENDING' && !isEditing && (
-                          <button onClick={() => startEditing(order)} className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 font-medium">
+                          <button onClick={() => startEditing(order)} className="flex items-center space-x-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium transition-colors">
                             <Edit className="h-4 w-4" /> <span>Modificar Pedido</span>
                           </button>
                         )}
                       </div>
 
                       <ul className="space-y-3">
-                        {currentItemsList.map((item, i) => (
-                          <li key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border border-gray-100">
-                            <div className="flex-1">
-                              <span className="font-bold text-gray-800 block">{item.name}</span>
-                              <span className="text-xs text-gray-400 font-mono">ID: {item.productId}</span>
-                            </div>
-                            
-                            {isEditing ? (
-                              <div className="flex items-center space-x-3 mr-4 bg-gray-100 rounded-lg p-1">
-                                <button onClick={() => updateEditQuantity(item.productId, -1)} className="p-1 hover:bg-white rounded text-gray-600 shadow-sm"><Minus className="h-3 w-3" /></button>
-                                <span className="font-bold w-4 text-center">{item.quantity}</span>
-                                <button onClick={() => updateEditQuantity(item.productId, 1)} className="p-1 hover:bg-white rounded text-gray-600 shadow-sm"><Plus className="h-3 w-3" /></button>
-                                <button onClick={() => updateEditQuantity(item.productId, -item.quantity)} className="ml-2 p-1 text-red-500 hover:bg-red-100 rounded" title="Eliminar artículo"><Trash2 className="h-4 w-4" /></button>
+                        {currentItemsList.map((item, i) => {
+                          const liveProduct = catalog[item.productId] || {};
+                          
+                          const imgSrc = item.imageUrl || liveProduct.imageUrl || (liveProduct.imageUrls?.[0]) || '';
+                          const itemCategory = item.category || liveProduct.category || 'Gorra';
+                          const itemSize = item.size || liveProduct.size || 'N/A';
+                          
+                          // Lógica de ocultamiento del [N/A] para calidad
+                          const itemQuality = item.quality || liveProduct.quality || '';
+                          
+                          const brandsArr = (item.brands && item.brands.length > 0) 
+                            ? item.brands 
+                            : (liveProduct.brands && liveProduct.brands.length > 0 ? liveProduct.brands : [liveProduct.brand].filter(Boolean));
+                          const brandsText = brandsArr.length > 0 ? brandsArr.join(' X ') : 'Sin Marca';
+
+                          return (
+                            <li key={i} className="flex justify-between items-center text-sm bg-white dark:bg-slate-800 p-2.5 rounded-lg border border-gray-100 dark:border-slate-700">
+                              
+                              <div className="flex items-center flex-1">
+                                <div 
+                                  onClick={() => imgSrc && setImageModal({ isOpen: true, src: imgSrc, title: item.name })}
+                                  className={`h-12 w-12 flex-shrink-0 rounded bg-gray-100 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 overflow-hidden mr-3 transition-opacity ${imgSrc ? 'cursor-pointer hover:opacity-75' : ''}`}
+                                  title="Ver imagen"
+                                >
+                                  {imgSrc ? (
+                                    <img src={imgSrc} alt={item.name} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="h-full w-full flex items-center justify-center">
+                                      <Package className="h-5 w-5 text-gray-400 dark:text-gray-600" />
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                <div>
+                                  <span className="font-bold text-gray-800 dark:text-white block line-clamp-2">
+                                    <span className="text-blue-600 dark:text-blue-400">[{itemCategory}]</span> {item.name} <span className="text-gray-500 dark:text-gray-400">[{itemSize}] [{brandsText}]{itemQuality && itemQuality !== 'N/A' ? ` [${itemQuality}]` : ''}</span>
+                                  </span>
+                                  <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">ID: {item.productId}</span>
+                                </div>
                               </div>
-                            ) : (
-                              <span className="font-bold text-slate-700 mr-6">{item.quantity}x</span>
-                            )}
-                            
-                            <span className="text-gray-600 font-medium w-20 text-right">${(item.price * item.quantity).toLocaleString('es-MX')}</span>
-                          </li>
-                        ))}
+                              
+                              {isEditing ? (
+                                <div className="flex items-center space-x-3 mr-4 bg-gray-100 dark:bg-slate-900 rounded-lg p-1">
+                                  <button onClick={() => updateEditQuantity(item.productId, -1)} className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded text-gray-600 dark:text-gray-300 shadow-sm"><Minus className="h-3 w-3" /></button>
+                                  <span className="font-bold w-4 text-center dark:text-white">{item.quantity}</span>
+                                  <button onClick={() => updateEditQuantity(item.productId, 1)} className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded text-gray-600 dark:text-gray-300 shadow-sm"><Plus className="h-3 w-3" /></button>
+                                  <button onClick={() => updateEditQuantity(item.productId, -item.quantity)} className="ml-2 p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors" title="Eliminar artículo"><Trash2 className="h-4 w-4" /></button>
+                                </div>
+                              ) : (
+                                <span className="font-bold text-slate-700 dark:text-slate-300 mr-6 bg-gray-100 dark:bg-slate-900 px-3 py-1 rounded-md">{item.quantity}x</span>
+                              )}
+                              
+                              <span className="text-gray-600 dark:text-gray-300 font-bold w-20 text-right">${(item.price * item.quantity).toLocaleString('es-MX')}</span>
+                            </li>
+                          );
+                        })}
                       </ul>
 
                       {isEditing && (
-                        <div className="mt-4 flex justify-end space-x-3 border-t border-gray-200 pt-3">
-                          <button onClick={() => setEditingOrderId(null)} className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded">Cancelar</button>
+                        <div className="mt-4 flex justify-end space-x-3 border-t border-gray-200 dark:border-slate-700 pt-3">
+                          <button onClick={() => setEditingOrderId(null)} className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700 rounded transition-colors">Cancelar</button>
                           <button 
                             onClick={() => saveEdit(order.id, order.items)}
                             disabled={isProcessing}
-                            className="flex items-center space-x-1 px-3 py-1.5 text-sm font-medium bg-green-600 text-white hover:bg-green-700 rounded disabled:opacity-50"
+                            className="flex items-center space-x-1 px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-700 text-white hover:bg-green-700 dark:hover:bg-green-600 rounded disabled:opacity-50 transition-colors"
                           >
                             {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                             <span>Guardar Cambios</span>
@@ -357,18 +443,18 @@ export const OrderList = () => {
                 )}
 
                 {isExpanded && order.status === 'PENDING' && !isEditing && (
-                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end space-x-4 rounded-b-xl">
+                  <div className="px-6 py-4 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex justify-end space-x-4 rounded-b-xl">
                     <button
                       disabled={isProcessing}
                       onClick={() => handleCancel(order.id, order.items)}
-                      className="px-4 py-2 text-red-600 font-medium hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                      className="px-4 py-2 text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
                     >
                       Cancelar Pedido
                     </button>
                     <button
                       disabled={isProcessing}
                       onClick={() => handleComplete(order.id)}
-                      className="px-4 py-2 bg-slate-900 text-white font-medium hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2"
+                      className="px-4 py-2 bg-slate-900 dark:bg-blue-600 text-white font-medium hover:bg-slate-800 dark:hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2"
                     >
                       {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                       <span>Finalizar</span>

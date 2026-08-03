@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer } from 'react';
+import { createContext, useContext, useReducer, useEffect } from 'react';
 
 const CartContext = createContext();
 
@@ -15,7 +15,6 @@ const cartReducer = (state, action) => {
       const existingItemIndex = state.items.findIndex(item => item.productId === action.payload.productId);
       
       if (existingItemIndex >= 0) {
-        // CORRECCIÓN DEL BUG: Se clona el array y TAMBIÉN el objeto específico para no alterar la memoria antigua
         const updatedItems = [...state.items];
         updatedItems[existingItemIndex] = {
           ...updatedItems[existingItemIndex],
@@ -51,7 +50,16 @@ const cartReducer = (state, action) => {
 };
 
 export const CartProvider = ({ children }) => {
-  const [state, dispatch] = useReducer(cartReducer, { items: [] });
+  // 1. INICIALIZAMOS LEYENDO EL CARRITO GUARDADO EN EL NAVEGADOR
+  const [state, dispatch] = useReducer(cartReducer, { items: [] }, (initial) => {
+    const savedCart = localStorage.getItem('cart_rex');
+    return savedCart ? { items: JSON.parse(savedCart) } : initial;
+  });
+
+  // 2. EFECTO PARA GUARDAR AUTOMÁTICAMENTE CADA VEZ QUE EL CARRITO CAMBIA
+  useEffect(() => {
+    localStorage.setItem('cart_rex', JSON.stringify(state.items));
+  }, [state.items]);
 
   const total = state.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const totalItems = state.items.reduce((acc, item) => acc + item.quantity, 0);
@@ -64,7 +72,12 @@ export const CartProvider = ({ children }) => {
         name: product.name, 
         price: product.price, 
         imageUrl: product.imageUrl,
-        stockLimits: product.stock, 
+        stockLimits: product.stock,
+        // NUEVOS CAMPOS PARA EL FORMATO DEL TICKET:
+        category: product.category,
+        quality: product.quality,
+        size: product.size,
+        brands: product.brands,
         quantity 
       } 
     });
