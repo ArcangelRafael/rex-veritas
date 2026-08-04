@@ -4,11 +4,12 @@ import { useCart } from '../context/CartContext';
 import { productService } from '../services/productService'; 
 import { orderService } from '../services/orderService';
 import { emailService } from '../services/emailService';
-import { messageService } from '../services/messageService'; // Añadimos el servicio de mensajes
-import { Trash2, ArrowLeft, MessageCircleWarning, CheckCircle2, Send, Minus, Plus, AlertTriangle, X, MessageCircle, Loader2 } from 'lucide-react'; // Añadimos iconos extra
+import { messageService } from '../services/messageService'; 
+import { Trash2, ArrowLeft, MessageCircleWarning, CheckCircle2, Send, Minus, Plus, AlertTriangle, X, MessageCircle, Loader2 } from 'lucide-react'; 
 
 export const Checkout = () => {
-  const { cart, total, totalItems, removeItem, clearCart, addItem, updateQuantity } = useCart();
+  // AQUÍ ESTÁ EL CAMBIO: Extraemos cartTimeLeft del hook useCart
+  const { cart, total, totalItems, removeItem, clearCart, addItem, updateQuantity, cartTimeLeft } = useCart();
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(false);
@@ -19,11 +20,9 @@ export const Checkout = () => {
   const [stockWarnings, setStockWarnings] = useState({});
   const [catalog, setCatalog] = useState({}); 
 
-  // --- ESTADOS PARA LA FASE 1 (CONTROL OPTIMISTA DE INVENTARIO) ---
   const [removedProducts, setRemovedProducts] = useState([]);
   const [showRemovedModal, setShowRemovedModal] = useState(false);
 
-  // --- ESTADOS PARA EL MODAL DE CONTACTO ---
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactData, setContactData] = useState({ phone: '', subject: '', text: '' });
   const [contactLoading, setContactLoading] = useState(false);
@@ -60,19 +59,16 @@ export const Checkout = () => {
         cart.forEach(item => {
           const productInDb = currentProducts.find(p => p.id === item.productId);
           
-          // LÓGICA DE LA CARRERA: Si no existe o el stock ya es 0, alguien le ganó.
           if (!productInDb || productInDb.stock === 0) {
             newlyRemoved.push(item);
-            removeItem(item.productId); // Lo eliminamos del carrito de la memoria automáticamente
+            removeItem(item.productId); 
           } else if (productInDb.stock < item.quantity) {
             warnings[item.productId] = `Tenías ${item.quantity} en el carrito, pero el stock actual es ${productInDb.stock}. Por favor, ajusta la cantidad.`;
           }
         });
         
-        // Si la limpieza automática quitó productos, lanzamos el modal
         if (newlyRemoved.length > 0) {
           setRemovedProducts(prev => {
-            // Filtramos para no duplicar si el useEffect se dispara dos veces rápido
             const unique = newlyRemoved.filter(n => !prev.some(p => p.productId === n.productId));
             if (unique.length > 0) setShowRemovedModal(true);
             return [...prev, ...unique];
@@ -88,7 +84,7 @@ export const Checkout = () => {
     };
 
     validateStock();
-  }, [cart, removeItem]); // Se ejecutará al inicio y si el carrito cambia
+  }, [cart, removeItem]); 
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -150,7 +146,6 @@ export const Checkout = () => {
     }
   };
 
-  // --- FUNCIÓN PARA CONTACTO POR PRODUCTO AGOTADO ---
   const handleContactSubmit = async (e) => {
     e.preventDefault();
     setContactLoading(true);
@@ -218,7 +213,6 @@ export const Checkout = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 relative">
       
-      {/* MODAL 1: ALGUIEN TE GANÓ EL PRODUCTO (LIMPIEZA DE CARRITO) */}
       {showRemovedModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-lg w-full p-8 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800 relative text-center">
@@ -268,7 +262,6 @@ export const Checkout = () => {
         </div>
       )}
 
-      {/* MODAL 2: CONTACTO DE EMERGENCIA (Si decidieron preguntar por el producto agotado) */}
       {showContactModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-md w-full p-8 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800 relative">
@@ -392,8 +385,17 @@ export const Checkout = () => {
               </div>
             )}
 
+            {/* AQUÍ INYECTAMOS EL TEMPORIZADOR EN EL RESUMEN */}
             <div className="p-5 sm:p-6 border-b border-gray-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h2 className="text-xl font-bold text-gray-800 dark:text-white">Resumen de Pedido ({totalItems} artículos)</h2>
+              <div>
+                <h2 className="text-xl font-bold text-gray-800 dark:text-white">Resumen de Pedido ({totalItems} artículos)</h2>
+                {cartTimeLeft && (
+                  <p className="text-sm font-bold text-orange-500 dark:text-orange-400 mt-1 animate-pulse flex items-center space-x-1">
+                    <span>Tu carrito se vaciará en</span>
+                    <span className="bg-orange-100 dark:bg-orange-900/30 px-2 py-0.5 rounded">{cartTimeLeft}</span>
+                  </p>
+                )}
+              </div>
               <button 
                 onClick={clearCart}
                 className="flex items-center justify-center space-x-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 font-bold rounded-lg transition-colors border border-transparent hover:border-red-100 dark:hover:border-red-900/30 w-full sm:w-auto"

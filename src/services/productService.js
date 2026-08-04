@@ -1,4 +1,3 @@
-// IMPORTANTE: Se añadió "increment" a la importación
 import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc, query, where, increment } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { Product } from "../models/Product";
@@ -68,7 +67,6 @@ export const productService = {
     }
   },
 
-  // NUEVO: Sube el contador solo si alguien acapara el último stock
   updateCartCount: async (productId, amount) => {
     try {
       const productRef = doc(db, collectionName, productId);
@@ -77,6 +75,24 @@ export const productService = {
       });
     } catch (error) {
       console.error("Error actualizando contador de carritos:", error);
+    }
+  },
+
+  // NUEVA FUNCIÓN: El botón de pánico del Admin para limpiar carritos atascados
+  resetAllGhostCarts: async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, collectionName));
+      const promises = querySnapshot.docs.map(document => {
+        // Solo actualizamos los que tengan contadores para ahorrar lecturas/escrituras
+        if (document.data().inCartsCount > 0) {
+          return updateDoc(doc(db, collectionName, document.id), { inCartsCount: 0 });
+        }
+        return Promise.resolve();
+      });
+      await Promise.all(promises);
+    } catch (error) {
+      console.error("Error limpiando carritos fantasma:", error);
+      throw error;
     }
   }
 };

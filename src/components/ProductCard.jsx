@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
-import { productService } from '../services/productService'; // Importamos el servicio
-import { ShoppingCart, Rocket, Flame } from 'lucide-react'; // Añadimos la flama FOMO
+import { ShoppingCart, Rocket, Flame } from 'lucide-react'; 
 
 export const ProductCard = ({ product, onOpenModal }) => {
   const { addItem, cart } = useCart();
@@ -34,16 +33,9 @@ export const ProductCard = ({ product, onOpenModal }) => {
     ? product.brands.join(' X ') 
     : (product.brand || 'Sin Marca');
 
-  // LÓGICA DE LA CARRERA
-  const handleAddToCart = async (e) => {
-    e.stopPropagation(); 
-    addItem(product);
-    
-    // Si con este clic el cliente agota SU stock disponible, le avisamos a Firestore
-    if (availableStock - 1 === 0) {
-      await productService.updateCartCount(product.id, 1);
-    }
-  };
+  // LA LÓGICA INTELIGENTE: Solo muestra el FOMO si las personas que lo tienen en el carrito 
+  // igualan o superan el stock en la base de datos.
+  const isHighlyRequested = product.inCartsCount >= product.stock;
 
   return (
     <div 
@@ -81,8 +73,7 @@ export const ProductCard = ({ product, onOpenModal }) => {
         )}
       </div>
 
-      {/* MENSAJE DE URGENCIA (FOMO) */}
-      {product.inCartsCount > 0 && product.stock > 0 && (
+      {isHighlyRequested && product.stock > 0 && (
         <div className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 text-[11px] sm:text-xs font-black px-3 py-2 flex items-center gap-2 border-b border-yellow-200 dark:border-yellow-800/50 animate-pulse tracking-wide">
           <Flame className="h-4 w-4 text-orange-500 flex-shrink-0" />
           <span>¡{product.inCartsCount} {product.inCartsCount === 1 ? 'persona lo tiene' : 'personas lo tienen'} en su carrito! Gánalo.</span>
@@ -108,7 +99,7 @@ export const ProductCard = ({ product, onOpenModal }) => {
         </div>
 
         <button
-          onClick={handleAddToCart}
+          onClick={(e) => { e.stopPropagation(); addItem(product); }}
           disabled={isOutOfStock}
           className={`w-full flex items-center justify-center space-x-2 py-2 px-4 rounded-lg font-bold transition-colors ${
             isOutOfStock 
