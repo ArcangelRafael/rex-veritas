@@ -45,15 +45,68 @@ export const Home = () => {
     fetchProducts();
   }, []);
 
-  const brands = useMemo(() => {
-    const allBrands = products.flatMap(p => p.brands?.length ? p.brands : [p.brand]);
-    return ['ALL', ...new Set(allBrands.filter(Boolean))];
-  }, [products]);
+  // --- 1. LÓGICA DE FILTROS EN CASCADA (Filtros Dependientes 360°) ---
   
-  const sizes = useMemo(() => ['ALL', ...new Set(products.map(p => p.size).filter(Boolean))], [products]);
-  const categories = useMemo(() => ['ALL', ...new Set(products.map(p => p.category).filter(Boolean))], [products]);
-  const qualities = useMemo(() => ['ALL', ...new Set(products.map(p => p.quality).filter(Boolean))], [products]);
+  // Categorías disponibles según la Marca, Talla y Calidad seleccionadas
+  const dynamicCategories = useMemo(() => {
+    const validProducts = products.filter(p => 
+      (selectedBrand === 'ALL' || (p.brands?.length ? p.brands : [p.brand]).includes(selectedBrand)) &&
+      (selectedSize === 'ALL' || p.size === selectedSize) &&
+      (selectedQuality === 'ALL' || p.quality === selectedQuality)
+    );
+    return ['ALL', ...new Set(validProducts.map(p => p.category).filter(Boolean))];
+  }, [products, selectedBrand, selectedSize, selectedQuality]);
 
+  // Calidades disponibles según la Categoría, Marca y Talla seleccionadas
+  const dynamicQualities = useMemo(() => {
+    const validProducts = products.filter(p => 
+      (selectedCategory === 'ALL' || p.category === selectedCategory) &&
+      (selectedBrand === 'ALL' || (p.brands?.length ? p.brands : [p.brand]).includes(selectedBrand)) &&
+      (selectedSize === 'ALL' || p.size === selectedSize)
+    );
+    return ['ALL', ...new Set(validProducts.map(p => p.quality).filter(Boolean))];
+  }, [products, selectedCategory, selectedBrand, selectedSize]);
+
+  // Marcas disponibles según la Categoría, Calidad y Talla seleccionadas
+  const dynamicBrands = useMemo(() => {
+    const validProducts = products.filter(p => 
+      (selectedCategory === 'ALL' || p.category === selectedCategory) &&
+      (selectedSize === 'ALL' || p.size === selectedSize) &&
+      (selectedQuality === 'ALL' || p.quality === selectedQuality)
+    );
+    const allBrands = validProducts.flatMap(p => p.brands?.length ? p.brands : [p.brand]);
+    return ['ALL', ...new Set(allBrands.filter(Boolean))];
+  }, [products, selectedCategory, selectedSize, selectedQuality]);
+
+  // Tallas disponibles según la Categoría, Marca y Calidad seleccionadas
+  const dynamicSizes = useMemo(() => {
+    const validProducts = products.filter(p => 
+      (selectedCategory === 'ALL' || p.category === selectedCategory) &&
+      (selectedBrand === 'ALL' || (p.brands?.length ? p.brands : [p.brand]).includes(selectedBrand)) &&
+      (selectedQuality === 'ALL' || p.quality === selectedQuality)
+    );
+    return ['ALL', ...new Set(validProducts.map(p => p.size).filter(Boolean))];
+  }, [products, selectedCategory, selectedBrand, selectedQuality]);
+
+  // --- 2. SEGUROS DE REINICIO AUTOMÁTICO ---
+  // Si un filtro seleccionado ya no es válido debido a otro cambio, se resetea a 'ALL'
+  useEffect(() => {
+    if (selectedCategory !== 'ALL' && !dynamicCategories.includes(selectedCategory)) setSelectedCategory('ALL');
+  }, [dynamicCategories, selectedCategory]);
+
+  useEffect(() => {
+    if (selectedQuality !== 'ALL' && !dynamicQualities.includes(selectedQuality)) setSelectedQuality('ALL');
+  }, [dynamicQualities, selectedQuality]);
+
+  useEffect(() => {
+    if (selectedBrand !== 'ALL' && !dynamicBrands.includes(selectedBrand)) setSelectedBrand('ALL');
+  }, [dynamicBrands, selectedBrand]);
+
+  useEffect(() => {
+    if (selectedSize !== 'ALL' && !dynamicSizes.includes(selectedSize)) setSelectedSize('ALL');
+  }, [dynamicSizes, selectedSize]);
+
+  // --- 3. FILTRADO FINAL DE PRODUCTOS ---
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const productBrands = product.brands?.length ? product.brands : [product.brand];
@@ -180,28 +233,28 @@ export const Home = () => {
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Producto</label>
             <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
-              {categories.map(cat => <option key={cat} value={cat}>{cat === 'ALL' ? 'Todos' : cat}</option>)}
+              {dynamicCategories.map(cat => <option key={cat} value={cat}>{cat === 'ALL' ? 'Todos' : cat}</option>)}
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Calidad</label>
             <select value={selectedQuality} onChange={(e) => setSelectedQuality(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
-              {qualities.map(q => <option key={q} value={q}>{q === 'ALL' ? 'Todas' : q}</option>)}
+              {dynamicQualities.map(q => <option key={q} value={q}>{q === 'ALL' ? 'Todas' : q}</option>)}
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Marca</label>
             <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
-              {brands.map(brand => <option key={brand} value={brand}>{brand === 'ALL' ? 'Todas' : brand}</option>)}
+              {dynamicBrands.map(brand => <option key={brand} value={brand}>{brand === 'ALL' ? 'Todas' : brand}</option>)}
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Talla</label>
             <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
-              {sizes.map(size => <option key={size} value={size}>{size === 'ALL' ? 'Todas' : size}</option>)}
+              {dynamicSizes.map(size => <option key={size} value={size}>{size === 'ALL' ? 'Todas' : size}</option>)}
             </select>
           </div>
         </div>
@@ -336,14 +389,14 @@ export const Home = () => {
       {selectedProduct && (
         <div 
           onClick={closeModal} 
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-80 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black bg-opacity-80 backdrop-blur-sm overflow-y-auto"
         >
           <div 
             onClick={(e) => e.stopPropagation()} 
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] md:h-[600px] flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200 transition-colors"
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] md:h-[600px] flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200 transition-colors my-auto"
           >
             <div 
-              className={`w-full md:w-1/2 h-64 md:h-full bg-gray-100 dark:bg-slate-800 relative overflow-hidden flex-shrink-0 ${isZoomed ? 'cursor-move' : 'cursor-zoom-in'} group transition-colors`} 
+              className={`w-full md:w-1/2 h-56 sm:h-64 md:h-full bg-gray-100 dark:bg-slate-800 relative overflow-hidden flex-shrink-0 ${isZoomed ? 'cursor-move' : 'cursor-zoom-in'} group transition-colors`} 
               onClick={toggleZoom}
               onMouseMove={handleMouseMove}
               onMouseLeave={() => setZoomOrigin('50% 50%')}
@@ -383,43 +436,44 @@ export const Home = () => {
               </div>
             </div>
 
-            <div className="w-full md:w-1/2 flex flex-col flex-1 min-h-0 p-5 md:p-8 bg-white dark:bg-slate-900">
+            {/* LADO DERECHO: CON SCROLL TÁCTIL FLUIDO PARA MÓVILES PEQUEÑOS */}
+            <div className="w-full md:w-1/2 flex flex-col flex-1 min-h-0 p-4 sm:p-6 md:p-8 bg-white dark:bg-slate-900 overflow-y-auto">
               <div className="flex-shrink-0">
-                <div className="flex justify-between items-start mb-4">
+                <div className="flex justify-between items-start mb-3">
                   <div>
-                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1 block">
+                    <span className="text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1 block">
                       {selectedProduct.brands?.length > 1 ? selectedProduct.brands.join(' X ') : (selectedProduct.brand || 'Sin Marca')}
                     </span>
-                    <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white leading-tight">{selectedProduct.name}</h2>
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 dark:text-white leading-tight">{selectedProduct.name}</h2>
                     
-                    <div className="flex space-x-2 mt-2">
+                    <div className="flex flex-wrap gap-1.5 mt-2">
                       {selectedProduct.category && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.category}</span>}
                       {selectedProduct.quality && selectedProduct.quality !== 'N/A' && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.quality}</span>}
                     </div>
                   </div>
                   
-                  {/* AQUÍ ESTÁ EL BOTÓN DE CERRAR ACTUALIZADO */}
                   <button onClick={closeModal} className="p-2 bg-red-500 dark:bg-red-600 rounded-full text-white hover:bg-red-600 dark:hover:bg-red-700 transition-colors flex-shrink-0 shadow-md">
-                    <X className="h-6 w-6" />
+                    <X className="h-5 w-5 sm:h-6 sm:w-6" />
                   </button>
                 </div>
 
-                <div className="flex items-center space-x-4 mb-6">
-                  <span className="text-3xl font-black text-slate-900 dark:text-white">${selectedProduct.price.toLocaleString('es-MX')}</span>
-                  <span className="bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 px-3 py-1 rounded-full text-sm font-bold">
+                <div className="flex items-center space-x-4 mb-4">
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">${selectedProduct.price.toLocaleString('es-MX')}</span>
+                  <span className="bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 px-3 py-1 rounded-full text-xs sm:text-sm font-bold">
                     Talla: {selectedProduct.size}
                   </span>
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto pr-3 mb-4">
-                <h4 className="text-gray-900 dark:text-white font-bold mb-2 sticky top-0 bg-white dark:bg-slate-900 pb-2 z-10">Descripción del Producto</h4>
-                <p className="whitespace-pre-line text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+              {/* SECCIÓN DE DESCRIPCIÓN CON SCROLL VISIBLE EN CELULARES */}
+              <div className="flex-1 min-h-[80px] my-2 pr-1 overflow-y-auto">
+                <h4 className="text-gray-900 dark:text-white font-bold mb-1 text-sm sm:text-base sticky top-0 bg-white dark:bg-slate-900 py-1 z-10">Descripción del Producto</h4>
+                <p className="whitespace-pre-line text-xs sm:text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
                   {selectedProduct.description || 'Este producto no cuenta con descripción detallada en este momento.'}
                 </p>
               </div>
 
-              <div className="flex-shrink-0 pt-5 border-t border-gray-100 dark:border-slate-800">
+              <div className="flex-shrink-0 pt-4 border-t border-gray-100 dark:border-slate-800 mt-auto">
                 {(() => {
                   const cartItem = cart.find(item => item.productId === selectedProduct.id);
                   const quantityInCart = cartItem ? cartItem.quantity : 0;
@@ -427,27 +481,27 @@ export const Home = () => {
                   const isOutOfStock = availableStock <= 0;
 
                   return (
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-3 sm:space-x-4">
                       <div className="flex-1">
                         {quantityInCart > 0 ? (
-                          <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-2 w-full">
-                            <button onClick={() => updateQuantity(selectedProduct.id, quantityInCart - 1)} className="w-12 h-12 flex items-center justify-center bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-sm text-slate-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-transform"><Minus className="h-5 w-5" /></button>
+                          <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-1.5 sm:p-2 w-full">
+                            <button onClick={() => updateQuantity(selectedProduct.id, quantityInCart - 1)} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-sm text-slate-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-transform"><Minus className="h-4 w-4 sm:h-5 sm:w-5" /></button>
                             <div className="flex flex-col items-center justify-center">
-                              <span className="text-xl font-black text-slate-900 dark:text-white leading-none">{quantityInCart}</span>
-                              <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-1">en carrito</span>
+                              <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-none">{quantityInCart}</span>
+                              <span className="text-[9px] sm:text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-1">en carrito</span>
                             </div>
-                            <button onClick={() => addItem(selectedProduct)} disabled={isOutOfStock} className="w-12 h-12 flex items-center justify-center bg-slate-900 dark:bg-slate-700 rounded-lg shadow-sm text-white hover:bg-slate-800 dark:hover:bg-slate-600 active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"><Plus className="h-5 w-5" /></button>
+                            <button onClick={() => addItem(selectedProduct)} disabled={isOutOfStock} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-slate-900 dark:bg-slate-700 rounded-lg shadow-sm text-white hover:bg-slate-800 dark:hover:bg-slate-600 active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"><Plus className="h-4 w-4 sm:h-5 sm:w-5" /></button>
                           </div>
                         ) : (
-                          <button onClick={() => addItem(selectedProduct)} disabled={isOutOfStock} className={`w-full py-4 rounded-xl font-bold text-lg flex justify-center items-center space-x-3 transition-transform ${isOutOfStock ? 'bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-slate-900 dark:bg-blue-600 text-white hover:bg-slate-800 dark:hover:bg-blue-700 active:scale-95'}`}>
-                            <ShoppingCart className="h-6 w-6" />
+                          <button onClick={() => addItem(selectedProduct)} disabled={isOutOfStock} className={`w-full py-3 sm:py-4 rounded-xl font-bold text-base sm:text-lg flex justify-center items-center space-x-2 sm:space-x-3 transition-transform ${isOutOfStock ? 'bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-slate-900 dark:bg-blue-600 text-white hover:bg-slate-800 dark:hover:bg-blue-700 active:scale-95'}`}>
+                            <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6" />
                             <span>{isOutOfStock ? 'Agotado Temporalmente' : 'Añadir al Carrito'}</span>
                           </button>
                         )}
                       </div>
-                      <div className="text-center px-4">
-                        <span className="block text-xs font-bold text-gray-400 dark:text-gray-500 uppercase">Stock</span>
-                        <span className={`text-lg font-black ${availableStock > 0 ? 'text-slate-900 dark:text-white' : 'text-red-500 dark:text-red-400'}`}>{availableStock}</span>
+                      <div className="text-center px-2 sm:px-4">
+                        <span className="block text-[10px] sm:text-xs font-bold text-gray-400 dark:text-gray-500 uppercase">Stock</span>
+                        <span className={`text-base sm:text-lg font-black ${availableStock > 0 ? 'text-slate-900 dark:text-white' : 'text-red-500 dark:text-red-400'}`}>{availableStock}</span>
                       </div>
                     </div>
                   );

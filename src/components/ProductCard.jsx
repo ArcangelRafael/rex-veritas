@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
+import { productService } from '../services/productService'; 
 import { ShoppingCart, Rocket, Flame } from 'lucide-react'; 
 
 export const ProductCard = ({ product, onOpenModal }) => {
@@ -33,8 +34,16 @@ export const ProductCard = ({ product, onOpenModal }) => {
     ? product.brands.join(' X ') 
     : (product.brand || 'Sin Marca');
 
-  // LA LÓGICA INTELIGENTE: Solo muestra el FOMO si las personas que lo tienen en el carrito 
-  // igualan o superan el stock en la base de datos.
+  const handleAddToCart = async (e) => {
+    e.stopPropagation(); 
+    addItem(product);
+    
+    // Alarma a Firebase solo si el stock disponible en la pantalla se va a 0
+    if (availableStock - 1 === 0) {
+      await productService.updateCartCount(product.id, 1);
+    }
+  };
+
   const isHighlyRequested = product.inCartsCount >= product.stock;
 
   return (
@@ -57,13 +66,25 @@ export const ProductCard = ({ product, onOpenModal }) => {
           </div>
         )}
         
-        <div className="absolute top-2 left-2 flex flex-col gap-1">
-          <span className="bg-slate-900 dark:bg-slate-700 text-white text-[10px] sm:text-xs font-bold px-2 py-1 rounded">
+        {/* CONTENEDOR DE ETIQUETAS: Se añadió items-start para que no se estiren */}
+        <div className="absolute top-2 left-2 flex flex-col items-start gap-1.5">
+          
+          {/* ETIQUETA DE MARCA */}
+          <span className="bg-slate-900/95 dark:bg-slate-800/95 text-white text-[10px] sm:text-xs font-bold px-2 py-1 rounded w-max shadow-sm backdrop-blur-sm">
             {displayBrand}
           </span>
-          <span className="bg-gray-200 dark:bg-slate-800 text-slate-800 dark:text-gray-200 text-xs font-bold px-2 py-1 rounded w-max">
+          
+          {/* ETIQUETA DE TALLA */}
+          <span className="bg-slate-800/95 dark:bg-slate-700/95 text-white text-[10px] sm:text-xs font-bold px-2 py-1 rounded w-max shadow-sm backdrop-blur-sm">
             Talla: {product.size}
           </span>
+          
+          {/* ETIQUETA DE CALIDAD */}
+          {product.quality && product.quality !== 'N/A' && (
+            <span className="bg-blue-900/95 dark:bg-blue-800/95 text-white text-[10px] sm:text-xs font-bold px-2 py-1 rounded w-max shadow-sm backdrop-blur-sm tracking-wide">
+              {product.quality}
+            </span>
+          )}
         </div>
 
         {product.isBoosted && (
@@ -99,7 +120,7 @@ export const ProductCard = ({ product, onOpenModal }) => {
         </div>
 
         <button
-          onClick={(e) => { e.stopPropagation(); addItem(product); }}
+          onClick={handleAddToCart}
           disabled={isOutOfStock}
           className={`w-full flex items-center justify-center space-x-2 py-2 px-4 rounded-lg font-bold transition-colors ${
             isOutOfStock 

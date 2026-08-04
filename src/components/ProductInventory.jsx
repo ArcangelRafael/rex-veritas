@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { productService } from '../services/productService';
 import { orderService } from '../services/orderService';
-import { Search, Edit, TrendingUp, TrendingDown, Minus, Star, AlertTriangle, Package, Loader2, Save, X, CheckCircle2, Plus, Trash2, Rocket, Copy, EyeOff, Eye, Info } from 'lucide-react';
+import { Search, Edit, TrendingUp, TrendingDown, Minus, Star, AlertTriangle, Package, Loader2, Save, X, CheckCircle2, Plus, Trash2, Rocket, Copy, EyeOff, Eye, Info, Filter } from 'lucide-react';
 
 const DEFAULT_CATEGORIES = ['Gorra', 'Playera', 'Accesorio'];
 const DEFAULT_QUALITIES = ['G5', 'Original', 'Clon', 'Premium'];
@@ -10,7 +10,10 @@ export const ProductInventory = () => {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState('ALL'); 
+  const [filterBrand, setFilterBrand] = useState('ALL');       
   
   const [categories, setCategories] = useState(() => JSON.parse(localStorage.getItem('rex_cats')) || DEFAULT_CATEGORIES);
   const [qualities, setQualities] = useState(() => JSON.parse(localStorage.getItem('rex_quals')) || DEFAULT_QUALITIES);
@@ -20,7 +23,6 @@ export const ProductInventory = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // --- MODAL DE CONFIRMACIÓN DE ELIMINACIÓN ---
   const [deletingProductId, setProcessingDeleteId] = useState(null);
 
   const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'success', message: '', onConfirm: null });
@@ -47,7 +49,47 @@ export const ProductInventory = () => {
 
   useEffect(() => {
     fetchInventoryData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // --- 1. EXTRACCIÓN DINÁMICA DE MARCAS (Vigila qué Categoría está seleccionada) ---
+  const dynamicBrands = useMemo(() => {
+    let filtered = products;
+    if (filterCategory !== 'ALL') {
+      filtered = products.filter(p => p.category === filterCategory);
+    }
+    const allBrands = filtered.flatMap(p => p.brands?.length ? p.brands : [p.brand]);
+    return ['ALL', ...new Set(allBrands.filter(Boolean))];
+  }, [products, filterCategory]);
+
+  // --- 2. EXTRACCIÓN DINÁMICA DE CATEGORÍAS (Vigila qué Marca está seleccionada) ---
+  const dynamicCategories = useMemo(() => {
+    if (filterBrand === 'ALL') return categories; // Si no hay marca, muestra todas tus categorías base
+    
+    const availableCats = new Set(
+      products.filter(p => {
+        const pBrands = p.brands?.length ? p.brands : [p.brand];
+        return pBrands.includes(filterBrand);
+      }).map(p => p.category)
+    );
+    // Muestra solo las categorías de la marca que sí existen en tus categorías configuradas
+    return categories.filter(c => availableCats.has(c));
+  }, [products, filterBrand, categories]);
+
+  // --- 3. SEGURO CONTRA CONFLICTOS ---
+  // Si se actualiza la Categoría y la Marca actual ya no es válida, resetea la marca.
+  useEffect(() => {
+    if (filterBrand !== 'ALL' && !dynamicBrands.includes(filterBrand)) {
+      setFilterBrand('ALL');
+    }
+  }, [dynamicBrands, filterBrand]);
+
+  // Si se actualiza la Marca y la Categoría actual ya no es válida, resetea la categoría.
+  useEffect(() => {
+    if (filterCategory !== 'ALL' && !dynamicCategories.includes(filterCategory)) {
+      setFilterCategory('ALL');
+    }
+  }, [dynamicCategories, filterCategory]);
 
   const getProductStats = (productId) => {
     const now = new Date();
@@ -175,17 +217,21 @@ export const ProductInventory = () => {
     return <span className="inline-flex items-center space-x-1 text-xs font-bold bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 px-2 py-1 rounded-full"><Package className="h-3 w-3" /> <span>Normal</span></span>;
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.id.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchCategory = filterCategory === 'ALL' || p.category === filterCategory;
+    
+    const pBrands = p.brands?.length ? p.brands : [p.brand];
+    const matchBrand = filterBrand === 'ALL' || pBrands.includes(filterBrand);
+
+    return matchSearch && matchCategory && matchBrand;
+  });
 
   if (loading) return <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-slate-900 dark:text-white" /></div>;
 
   return (
     <div className="space-y-4 relative">
       
-      {/* MODAL GESTOR DE CATEGORÍAS/CALIDADES */}
       {managingOptions && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl max-w-sm w-full p-6 border border-transparent dark:border-slate-800">
@@ -207,7 +253,6 @@ export const ProductInventory = () => {
         </div>
       )}
 
-      {/* MODAL GLOBAL */}
       {modalConfig.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black bg-opacity-40 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800">
@@ -231,9 +276,50 @@ export const ProductInventory = () => {
         </div>
       )}
 
-      <div className="relative w-full md:w-96 mb-4">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <input type="text" placeholder="Buscar producto por Nombre o ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" />
+      <div className="flex flex-col md:flex-row gap-4 mb-4 bg-gray-50 dark:bg-slate-950/50 p-4 rounded-xl border border-gray-200 dark:border-slate-800">
+        
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input 
+            type="text" 
+            placeholder="Buscar por Nombre o ID..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+            className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" 
+          />
+        </div>
+
+        {/* --- MENÚS DESPLEGABLES CONECTADOS ENTRE SÍ --- */}
+        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+          <div className="relative flex-1 sm:w-48">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Filter className="h-4 w-4 text-gray-400" />
+            </div>
+            <select 
+              value={filterCategory} 
+              onChange={(e) => setFilterCategory(e.target.value)} 
+              className="w-full pl-9 pr-8 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors appearance-none cursor-pointer text-sm font-bold"
+            >
+              <option value="ALL">Todos los Productos</option>
+              {dynamicCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="relative flex-1 sm:w-48">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Star className="h-4 w-4 text-gray-400" />
+            </div>
+            <select 
+              value={filterBrand} 
+              onChange={(e) => setFilterBrand(e.target.value)} 
+              className="w-full pl-9 pr-8 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors appearance-none cursor-pointer text-sm font-bold"
+            >
+              <option value="ALL">Todas las Marcas</option>
+              {dynamicBrands.filter(b => b !== 'ALL').map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+        </div>
+
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-x-auto transition-colors">
@@ -260,7 +346,6 @@ export const ProductInventory = () => {
                   <td className="p-4">
                     <div className="flex items-center space-x-3">
                       
-                      {/* BOTÓN BOTE DE BASURA (A LA IZQUIERDA DE LA IMAGEN) */}
                       <button 
                         onClick={() => handleDeleteProduct(product.id, product.name)}
                         disabled={isDeleting}
@@ -285,7 +370,6 @@ export const ProductInventory = () => {
                     </div>
                   </td>
 
-                  {/* NUEVA COLUMNA VISIBLE: SÍ / NO */}
                   <td className="p-4 text-center">
                     {product.isActive ? (
                       <span className="inline-flex items-center space-x-1 text-xs font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full">
@@ -338,9 +422,15 @@ export const ProductInventory = () => {
             })}
           </tbody>
         </table>
+        
+        {filteredProducts.length === 0 && !loading && (
+          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+            <Package className="h-12 w-12 mx-auto mb-3 text-gray-300 dark:text-slate-700" />
+            <p>No se encontraron productos con esos filtros.</p>
+          </div>
+        )}
       </div>
 
-      {/* MODAL DE EDICIÓN DE PRODUCTO */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl my-8 max-h-[90vh] flex flex-col border border-transparent dark:border-slate-800">
@@ -394,7 +484,6 @@ export const ProductInventory = () => {
                 </div>
               </div>
 
-              {/* Marcas */}
               <div className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700 transition-colors">
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Marcas / Colaboraciones</label>
                 {editingProduct.brands.map((brand, index) => (
@@ -406,7 +495,6 @@ export const ProductInventory = () => {
                 <button type="button" onClick={() => addArrayField('brands')} className="mt-1 flex items-center space-x-1 text-sm text-slate-700 dark:text-slate-300 font-bold hover:text-slate-900 dark:hover:text-white"><Plus className="h-4 w-4" /> <span>Añadir otra marca</span></button>
               </div>
 
-              {/* Imágenes */}
               <div className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700 transition-colors">
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">URLs de Imágenes</label>
                 {editingProduct.imageUrls.map((url, index) => (
@@ -418,7 +506,6 @@ export const ProductInventory = () => {
                 <button type="button" onClick={() => addArrayField('imageUrls')} className="mt-1 flex items-center space-x-1 text-sm text-slate-700 dark:text-slate-300 font-bold hover:text-slate-900 dark:hover:text-white"><Plus className="h-4 w-4" /> <span>Añadir otra imagen</span></button>
               </div>
 
-              {/* CAMPO DE DESCRIPCIÓN REHABILITADO EN EL MODAL */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Descripción del Producto</label>
                 <textarea 
@@ -431,10 +518,8 @@ export const ProductInventory = () => {
                 ></textarea>
               </div>
 
-              {/* CHECKBOXES ADMINISTRATIVOS EN EDICIÓN */}
               <div className="flex flex-col space-y-3 pt-2 border-t border-gray-100 dark:border-slate-800">
                 
-                {/* OCULTAR PRODUCTO */}
                 <div className="flex items-center space-x-2">
                   <input 
                     type="checkbox" 
@@ -450,7 +535,6 @@ export const ProductInventory = () => {
                   </label>
                 </div>
 
-                {/* BOOST */}
                 <div className="flex items-center space-x-2">
                   <input type="checkbox" id="editIsBoosted" name="isBoosted" checked={editingProduct.isBoosted} onChange={handleInputChange} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
                   <label htmlFor="editIsBoosted" className="text-sm font-bold text-blue-700 dark:text-blue-400 flex items-center space-x-1 cursor-pointer"><Rocket className="h-4 w-4" /> <span>Activar Boost</span></label>
