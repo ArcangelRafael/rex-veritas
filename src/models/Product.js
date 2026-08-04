@@ -1,5 +1,5 @@
 export class Product {
-  constructor({ id, name, brand, brands, size, price, stock, imageUrl, imageUrls, description, isActive, isBoosted, category, quality, releaseDate }) {
+  constructor({ id, name, brand, brands, size, price, stock, imageUrl, imageUrls, description, isActive, isBoosted, category, quality, releaseDate, inCartsCount }) {
     this.id = id || null;
     this.name = name;
     
@@ -20,8 +20,10 @@ export class Product {
     this.category = category || 'Gorra';
     this.quality = quality || 'N/A';
     
-    // Campo para fecha de lanzamiento programada (ISO String)
     this.releaseDate = releaseDate || new Date().toISOString();
+    
+    // NUEVO: Contador de personas peleando por el último stock
+    this.inCartsCount = Number(inCartsCount) || 0;
   }
 
   hasSufficientStock(quantity) {
@@ -44,6 +46,7 @@ export class Product {
       category: this.category,
       quality: this.quality,
       releaseDate: this.releaseDate,
+      inCartsCount: this.inCartsCount, // SE GUARDA EN FIREBASE
       updatedAt: new Date()
     };
   }

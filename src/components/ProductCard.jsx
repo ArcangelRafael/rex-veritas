@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
-import { ShoppingCart, Rocket } from 'lucide-react';
+import { productService } from '../services/productService'; // Importamos el servicio
+import { ShoppingCart, Rocket, Flame } from 'lucide-react'; // Añadimos la flama FOMO
 
 export const ProductCard = ({ product, onOpenModal }) => {
   const { addItem, cart } = useCart();
@@ -32,6 +33,17 @@ export const ProductCard = ({ product, onOpenModal }) => {
   const displayBrand = product.brands && product.brands.length > 1 
     ? product.brands.join(' X ') 
     : (product.brand || 'Sin Marca');
+
+  // LÓGICA DE LA CARRERA
+  const handleAddToCart = async (e) => {
+    e.stopPropagation(); 
+    addItem(product);
+    
+    // Si con este clic el cliente agota SU stock disponible, le avisamos a Firestore
+    if (availableStock - 1 === 0) {
+      await productService.updateCartCount(product.id, 1);
+    }
+  };
 
   return (
     <div 
@@ -69,6 +81,14 @@ export const ProductCard = ({ product, onOpenModal }) => {
         )}
       </div>
 
+      {/* MENSAJE DE URGENCIA (FOMO) */}
+      {product.inCartsCount > 0 && product.stock > 0 && (
+        <div className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 text-[11px] sm:text-xs font-black px-3 py-2 flex items-center gap-2 border-b border-yellow-200 dark:border-yellow-800/50 animate-pulse tracking-wide">
+          <Flame className="h-4 w-4 text-orange-500 flex-shrink-0" />
+          <span>¡{product.inCartsCount} {product.inCartsCount === 1 ? 'persona lo tiene' : 'personas lo tienen'} en su carrito! Gánalo.</span>
+        </div>
+      )}
+
       <div className="p-4 flex flex-col flex-grow">
         <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-1 line-clamp-1" title={product.name}>
           {product.name}
@@ -88,10 +108,7 @@ export const ProductCard = ({ product, onOpenModal }) => {
         </div>
 
         <button
-          onClick={(e) => {
-            e.stopPropagation(); 
-            addItem(product);
-          }}
+          onClick={handleAddToCart}
           disabled={isOutOfStock}
           className={`w-full flex items-center justify-center space-x-2 py-2 px-4 rounded-lg font-bold transition-colors ${
             isOutOfStock 

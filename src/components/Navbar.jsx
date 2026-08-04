@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ShoppingCart, Store, Sun, Moon } from 'lucide-react'; // Añadimos Sun y Moon
+import { ShoppingCart, Sun, Moon } from 'lucide-react'; 
 import { useCart } from '../context/CartContext';
-import { useTheme } from '../context/ThemeContext'; // Importamos el Hook del tema
+import { useTheme } from '../context/ThemeContext'; 
 
 export const Navbar = () => {
   const { totalItems } = useCart();
@@ -12,10 +12,17 @@ export const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           
-          {/* Logo, Nombre y Switch de Modo Oscuro */}
+          {/* Logo Personalizado, Nombre y Switch de Modo Oscuro */}
           <div className="flex items-center space-x-4">
-            <Link to="/" className="flex items-center space-x-2 text-xl font-bold hover:text-gray-300 transition-colors">
-              <Store className="h-6 w-6" />
+            <Link to="/" className="flex items-center space-x-3 text-xl font-bold hover:text-gray-300 transition-colors">
+              
+              {/* LOGO LIBERADO Y MÁS GRANDE */}
+              <img 
+                src="/rexveritatislogo.webp" 
+                alt="Logo Tienda Rex-Veritatis" 
+                className="h-12 w-auto object-contain drop-shadow-md hover:scale-105 transition-transform" 
+              />
+              
               <span>Tienda Rex-Veritatis</span>
             </Link>
 

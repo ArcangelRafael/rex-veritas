@@ -1,11 +1,11 @@
-import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
+// IMPORTANTE: Se añadió "increment" a la importación
+import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc, query, where, increment } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { Product } from "../models/Product";
 
 const collectionName = "products";
 
 export const productService = {
-  // Para la tienda pública: Productos activos Y cuya fecha de lanzamiento ya haya llegado
   getProducts: async () => {
     try {
       const q = query(collection(db, collectionName), where("isActive", "==", true));
@@ -24,7 +24,6 @@ export const productService = {
     }
   },
 
-  // Para el panel Admin: Obtiene TODOS los productos sin filtro
   getAllAdminProducts: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, collectionName));
@@ -35,7 +34,6 @@ export const productService = {
     }
   },
 
-  // Agregar producto nuevo
   addProduct: async (productData) => {
     try {
       const product = new Product(productData);
@@ -47,7 +45,6 @@ export const productService = {
     }
   },
 
-  // Editar producto
   updateProduct: async (productId, updates) => {
     try {
       const productRef = doc(db, collectionName, productId);
@@ -61,7 +58,6 @@ export const productService = {
     }
   },
 
-  // NUEVO: Eliminar un producto
   deleteProduct: async (productId) => {
     try {
       const productRef = doc(db, collectionName, productId);
@@ -69,6 +65,18 @@ export const productService = {
     } catch (error) {
       console.error("Error eliminando producto:", error);
       throw error;
+    }
+  },
+
+  // NUEVO: Sube el contador solo si alguien acapara el último stock
+  updateCartCount: async (productId, amount) => {
+    try {
+      const productRef = doc(db, collectionName, productId);
+      await updateDoc(productRef, {
+        inCartsCount: increment(amount)
+      });
+    } catch (error) {
+      console.error("Error actualizando contador de carritos:", error);
     }
   }
 };

@@ -4,13 +4,48 @@ import { useAuth } from '../context/AuthContext';
 import { ProductForm } from '../components/ProductForm';
 import { OrderList } from '../components/OrderList';
 import { ProductInventory } from '../components/ProductInventory';
-import { LogOut, PlusCircle, BarChart3, Package, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageList } from '../components/MessageList'; 
+import { LogOut, PlusCircle, BarChart3, Package, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
+
+// LA SOLUCIÓN AL BUG: Declarar el componente AFUERA del Dashboard principal 
+// para que React no lo destruya al actualizar los contadores parpadeantes.
+const AccordionSection = ({ id, title, icon: Icon, badge, badgeText, isOpen, onToggle, children }) => {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden mb-4 transition-all duration-300">
+      <button 
+        onClick={() => onToggle(isOpen ? null : id)}
+        className={`w-full px-6 py-5 flex items-center justify-between text-left transition-colors ${isOpen ? 'bg-slate-900 dark:bg-slate-800 text-white' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50 text-gray-800 dark:text-gray-200'}`}
+      >
+        <div className="flex items-center space-x-3">
+          <Icon className={`h-6 w-6 ${isOpen ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`} />
+          
+          <div className="flex items-center space-x-3">
+            <h2 className="text-lg font-bold">{title}</h2>
+            {badge > 0 && (
+              <span className="animate-pulse bg-orange-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded-full shadow-lg">
+                {badge} {badgeText}
+              </span>
+            )}
+          </div>
+          
+        </div>
+        {isOpen ? <ChevronUp className="h-5 w-5 opacity-70" /> : <ChevronDown className="h-5 w-5 opacity-70" />}
+      </button>
+      
+      <div className={`p-6 bg-gray-50 dark:bg-slate-950/50 border-t border-gray-100 dark:border-slate-800 ${isOpen ? 'block animate-in slide-in-from-top-2' : 'hidden'}`}>
+        {children}
+      </div>
+    </div>
+  );
+};
 
 export const AdminDashboard = () => {
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
 
-  const [activeSection, setActiveSection] = useState('ORDERS'); 
+  const [activeSection, setActiveSection] = useState(null); 
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0); 
+  const [pendingOrdersCount, setPendingOrdersCount] = useState(0); 
 
   const handleLogout = async () => {
     try {
@@ -19,31 +54,6 @@ export const AdminDashboard = () => {
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
     }
-  };
-
-  const AccordionSection = ({ id, title, icon: Icon, children }) => {
-    const isOpen = activeSection === id;
-    
-    return (
-      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden mb-4 transition-all duration-300">
-        <button 
-          onClick={() => setActiveSection(isOpen ? null : id)}
-          className={`w-full px-6 py-5 flex items-center justify-between text-left transition-colors ${isOpen ? 'bg-slate-900 dark:bg-slate-800 text-white' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50 text-gray-800 dark:text-gray-200'}`}
-        >
-          <div className="flex items-center space-x-3">
-            <Icon className={`h-6 w-6 ${isOpen ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`} />
-            <h2 className="text-lg font-bold">{title}</h2>
-          </div>
-          {isOpen ? <ChevronUp className="h-5 w-5 opacity-70" /> : <ChevronDown className="h-5 w-5 opacity-70" />}
-        </button>
-        
-        {isOpen && (
-          <div className="p-6 bg-gray-50 dark:bg-slate-950/50 border-t border-gray-100 dark:border-slate-800 animate-in slide-in-from-top-2">
-            {children}
-          </div>
-        )}
-      </div>
-    );
   };
 
   return (
@@ -66,15 +76,48 @@ export const AdminDashboard = () => {
       </div>
 
       <div className="space-y-2">
-        <AccordionSection id="ORDERS" title="Gestor de Pedidos" icon={Package}>
-          <OrderList />
+        
+        <AccordionSection 
+          id="MESSAGES" 
+          title="Mensajes y Mayoreo" 
+          icon={MessageSquare} 
+          badge={unreadMessagesCount}
+          badgeText={unreadMessagesCount === 1 ? 'MENSAJE NUEVO' : 'MENSAJES NUEVOS'}
+          isOpen={activeSection === 'MESSAGES'}
+          onToggle={setActiveSection}
+        >
+          <MessageList onUnreadCountChange={setUnreadMessagesCount} />
         </AccordionSection>
 
-        <AccordionSection id="INVENTORY" title="Modificar Producto e Inteligencia de Negocios" icon={BarChart3}>
+        <AccordionSection 
+          id="ORDERS" 
+          title="Gestor de Pedidos" 
+          icon={Package}
+          badge={pendingOrdersCount}
+          badgeText={pendingOrdersCount === 1 ? 'PEDIDO PENDIENTE' : 'PEDIDOS PENDIENTES'}
+          isOpen={activeSection === 'ORDERS'}
+          onToggle={setActiveSection}
+        >
+          <OrderList onPendingCountChange={setPendingOrdersCount} />
+        </AccordionSection>
+
+        <AccordionSection 
+          id="INVENTORY" 
+          title="Modificar Producto e Inteligencia de Negocios" 
+          icon={BarChart3}
+          isOpen={activeSection === 'INVENTORY'}
+          onToggle={setActiveSection}
+        >
           <ProductInventory />
         </AccordionSection>
 
-        <AccordionSection id="ADD_PRODUCT" title="Agregar Nuevo Producto" icon={PlusCircle}>
+        <AccordionSection 
+          id="ADD_PRODUCT" 
+          title="Agregar Nuevo Producto" 
+          icon={PlusCircle}
+          isOpen={activeSection === 'ADD_PRODUCT'}
+          onToggle={setActiveSection}
+        >
           <div className="max-w-3xl">
             <ProductForm />
           </div>

@@ -3,7 +3,7 @@ import { orderService } from '../services/orderService';
 import { productService } from '../services/productService'; 
 import { Clock, CheckCircle2, XCircle, Package, Loader2, Copy, ChevronDown, ChevronUp, Search, Edit, Save, Plus, Minus, Trash2, AlertTriangle, Info, X } from 'lucide-react';
 
-export const OrderList = () => {
+export const OrderList = ({ onPendingCountChange }) => { // <-- RECIBIMOS LA FUNCIÓN DEL DASHBOARD
   const [orders, setOrders] = useState([]);
   const [catalog, setCatalog] = useState({}); 
   const [loading, setLoading] = useState(true);
@@ -63,6 +63,14 @@ export const OrderList = () => {
     fetchOrders();
   }, []);
 
+  // NUEVO EFECTO: Siempre que los pedidos cambien, avísale al menú cuántos están pendientes
+  useEffect(() => {
+    if (onPendingCountChange) {
+      const pendingCount = orders.filter(o => o.status === 'PENDING').length;
+      onPendingCountChange(pendingCount);
+    }
+  }, [orders, onPendingCountChange]);
+
   const handleComplete = (orderId) => {
     showConfirm('¿Seguro que quieres finalizar este pedido? Se moverá a concluidas.', async () => {
       closeModal();
@@ -101,7 +109,6 @@ export const OrderList = () => {
       const category = item.category || liveProduct.category || 'Gorra';
       const size = item.size || liveProduct.size || 'N/A';
       
-      // Si no hay calidad, lo dejamos vacío para que no imprima [N/A]
       const quality = item.quality || liveProduct.quality || '';
       const qualityText = quality && quality !== 'N/A' ? ` [${quality}]` : '';
       
@@ -181,7 +188,6 @@ export const OrderList = () => {
   return (
     <div className="space-y-6 relative">
       
-      {/* --- MODAL DE IMAGEN --- */}
       {imageModal.isOpen && (
         <div 
           className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black bg-opacity-70 backdrop-blur-sm transition-opacity"
@@ -209,7 +215,6 @@ export const OrderList = () => {
         </div>
       )}
 
-      {/* --- MODAL GLOBAL DE ALERTAS --- */}
       {modalConfig.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black bg-opacity-40 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800">
@@ -233,7 +238,6 @@ export const OrderList = () => {
         </div>
       )}
 
-      {/* Controles de búsqueda */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
         <div className="flex items-center space-x-2">
           <Package className="h-6 w-6 text-slate-700 dark:text-slate-300" />
@@ -261,7 +265,6 @@ export const OrderList = () => {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex space-x-4 border-b border-gray-200 dark:border-slate-800 mb-6 transition-colors">
         <button
           onClick={() => { setActiveTab('PENDING'); setSearchTerm(''); }}
@@ -374,7 +377,6 @@ export const OrderList = () => {
                           const itemCategory = item.category || liveProduct.category || 'Gorra';
                           const itemSize = item.size || liveProduct.size || 'N/A';
                           
-                          // Lógica de ocultamiento del [N/A] para calidad
                           const itemQuality = item.quality || liveProduct.quality || '';
                           
                           const brandsArr = (item.brands && item.brands.length > 0) 

@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
+import { Footer } from './components/Footer'; // Añadimos la importación del Footer
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 // Páginas
@@ -11,13 +12,14 @@ import { AdminDashboard } from './pages/AdminDashboard';
 function App() {
   return (
     <Router>
-      {/* AQUÍ ESTÁ LA MAGIA: Agregamos las clases dark: y una transición suave */}
-      <div className="min-h-screen bg-gray-50 dark:bg-slate-950 font-sans text-gray-900 dark:text-gray-100 transition-colors duration-300">
+      {/* Añadimos flex y flex-col para que el diseño empuje el footer hacia abajo */}
+      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-slate-950 font-sans text-gray-900 dark:text-gray-100 transition-colors duration-300">
+        
         {/* El Navbar se mostrará en todas las rutas */}
         <Navbar />
         
-        {/* Contenedor principal para las vistas */}
-        <main>
+        {/* Contenedor principal con flex-1 para que ocupe todo el espacio disponible */}
+        <main className="flex-1">
           <Routes>
             {/* Rutas Públicas (Clientes) */}
             <Route path="/" element={<Home />} />
@@ -37,6 +39,10 @@ function App() {
             />
           </Routes>
         </main>
+
+        {/* El Footer se renderizará en todas las rutas, siempre al fondo */}
+        <Footer />
+        
       </div>
     </Router>
   );
