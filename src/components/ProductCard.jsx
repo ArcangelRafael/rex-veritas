@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { productService } from '../services/productService'; 
-import { ShoppingCart, Rocket, Flame, Image as ImageIcon } from 'lucide-react'; 
+import { ShoppingCart, Rocket, Flame } from 'lucide-react'; 
 
 export const ProductCard = ({ product, onOpenModal }) => {
   const { addItem, cart } = useCart();
@@ -9,7 +9,6 @@ export const ProductCard = ({ product, onOpenModal }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
   
-  // NUEVO: Estado para el Skeleton Loader
   const [isImgLoaded, setIsImgLoaded] = useState(false);
 
   const images = product.imageUrls && product.imageUrls.length > 0 
@@ -20,7 +19,7 @@ export const ProductCard = ({ product, onOpenModal }) => {
     let interval;
     if (isHovered && images.length > 1) {
       interval = setInterval(() => {
-        setIsImgLoaded(false); // Reinicia el skeleton al cambiar de foto
+        setIsImgLoaded(false); 
         setCurrentImgIndex(prev => (prev + 1) % images.length);
       }, 2000);
     } else {
@@ -61,10 +60,14 @@ export const ProductCard = ({ product, onOpenModal }) => {
     >
       <div className="relative h-64 bg-gray-100 dark:bg-slate-800 flex-shrink-0 overflow-hidden transition-colors">
         
-        {/* --- SKELETON LOADER --- */}
+        {/* --- SKELETON LOADER CON TU LOGO --- */}
         {!isImgLoaded && images.length > 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-200 dark:bg-slate-700 animate-pulse">
-            <ImageIcon className="h-8 w-8 text-gray-400 dark:text-slate-500 opacity-50" />
+            <img 
+              src="/rexveritatislogo.webp" 
+              alt="Cargando..." 
+              className="h-16 w-auto opacity-20 dark:opacity-30 object-contain grayscale"
+            />
           </div>
         )}
 

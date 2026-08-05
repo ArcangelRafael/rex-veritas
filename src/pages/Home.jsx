@@ -3,7 +3,7 @@ import { productService } from '../services/productService';
 import { messageService } from '../services/messageService'; 
 import { ProductCard } from '../components/ProductCard';
 import { useCart } from '../context/CartContext';
-import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export const Home = () => {
   const [products, setProducts] = useState([]);
@@ -23,7 +23,6 @@ export const Home = () => {
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomOrigin, setZoomOrigin] = useState('50% 50%');
   
-  // NUEVO: Estado del Skeleton Loader del Modal
   const [isModalImgLoaded, setIsModalImgLoaded] = useState(false);
 
   const [showContactModal, setShowContactModal] = useState(false);
@@ -118,7 +117,7 @@ export const Home = () => {
     setSelectedProduct(product);
     setModalImgIndex(0);
     setIsZoomed(false);
-    setIsModalImgLoaded(false); // Resetea el loader al abrir modal
+    setIsModalImgLoaded(false); 
     setZoomOrigin('50% 50%');
     document.body.style.overflow = 'hidden'; 
   };
@@ -131,14 +130,14 @@ export const Home = () => {
 
   const nextModalImage = (e) => {
     e.stopPropagation();
-    setIsModalImgLoaded(false); // Resetea el loader al cambiar de foto
+    setIsModalImgLoaded(false); 
     const images = selectedProduct.imageUrls?.length ? selectedProduct.imageUrls : [selectedProduct.imageUrl];
     setModalImgIndex((prev) => (prev + 1) % images.length);
   };
 
   const prevModalImage = (e) => {
     e.stopPropagation();
-    setIsModalImgLoaded(false); // Resetea el loader al cambiar de foto
+    setIsModalImgLoaded(false); 
     const images = selectedProduct.imageUrls?.length ? selectedProduct.imageUrls : [selectedProduct.imageUrl];
     setModalImgIndex((prev) => (prev - 1 + images.length) % images.length);
   };
@@ -405,7 +404,11 @@ export const Home = () => {
                     {/* --- SKELETON LOADER EN EL MODAL --- */}
                     {!isModalImgLoaded && (
                       <div className="absolute inset-0 flex items-center justify-center bg-gray-200 dark:bg-slate-700 animate-pulse">
-                        <ImageIcon className="h-12 w-12 text-gray-400 dark:text-slate-500 opacity-50" />
+                        <img 
+                          src="/rexveritatislogo.webp" 
+                          alt="Cargando..." 
+                          className="h-20 sm:h-24 w-auto opacity-20 dark:opacity-30 object-contain grayscale"
+                        />
                       </div>
                     )}
                     
