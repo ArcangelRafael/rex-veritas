@@ -10,8 +10,9 @@ export const Home = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // --- ESTADOS PARA LA PANTALLA DE CARGA GLOBAL ESTILO VIDEOJUEGO ---
+  // --- ESTADOS PARA LA PANTALLA DE CARGA ---
   const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+  const [imagesToPreload, setImagesToPreload] = useState([]);
   const [loadedImagesCount, setLoadedImagesCount] = useState(0);
   const [totalImagesToLoad, setTotalImagesToLoad] = useState(0);
 
@@ -41,15 +42,13 @@ export const Home = () => {
         const inStockProducts = data.filter(p => p.stock > 0);
         setProducts(inStockProducts);
 
-        // VERIFICACIÓN DE PRECARGA (Solo corre 1 vez por sesión)
         const hasLoadedBefore = sessionStorage.getItem('rex_has_loaded');
         
         if (hasLoadedBefore) {
           setLoading(false);
         } else {
-          setIsGlobalLoading(true); // Activa la pantalla negra
+          setIsGlobalLoading(true); 
           
-          // Recolectar todas las URLs únicas de las fotos
           const allUrls = new Set();
           inStockProducts.forEach(p => {
             if (p.imageUrls && p.imageUrls.length > 0) {
@@ -62,48 +61,15 @@ export const Home = () => {
           const urlArray = Array.from(allUrls);
           setTotalImagesToLoad(urlArray.length);
 
-          // Si por alguna razón no hay imágenes, saltar directo
           if (urlArray.length === 0) {
             sessionStorage.setItem('rex_has_loaded', 'true');
             setIsGlobalLoading(false);
             setLoading(false);
-            return;
+          } else {
+            // Guardamos las URLs para renderizarlas en el DOM oculto
+            setImagesToPreload(urlArray);
           }
-
-          let loadedCount = 0;
-          let isFinished = false; // Bandera para evitar doble ejecución
-
-          const finishLoading = () => {
-            if (isFinished) return;
-            isFinished = true;
-            sessionStorage.setItem('rex_has_loaded', 'true');
-            setIsGlobalLoading(false);
-            setLoading(false);
-          };
-          
-          const checkDone = () => {
-            loadedCount++;
-            setLoadedImagesCount(loadedCount);
-            if (loadedCount === urlArray.length) {
-              // Pequeño retraso al 100% para que el cliente vea que terminó
-              setTimeout(finishLoading, 800); 
-            }
-          };
-
-          // Disparar la descarga de imágenes en la memoria caché
-          urlArray.forEach(url => {
-            const img = new Image();
-            img.src = url;
-            img.onload = checkDone;
-            img.onerror = checkDone; // Si falla, la contamos para no trabar el ciclo
-          });
-          
-          // Seguro Anti-Bugs: Si un internet es excesivamente lento, forzar entrada a los 12 seg.
-          setTimeout(() => {
-              if (!isFinished) finishLoading();
-          }, 12000);
         }
-
       } catch (err) {
         setError('No pudimos cargar el catálogo. Intenta de nuevo más tarde.');
         setLoading(false);
@@ -111,6 +77,35 @@ export const Home = () => {
     };
     fetchProducts();
   }, []);
+
+  // VIGILANTE DE PROGRESO (Cierra la carga al llegar al 100%)
+  useEffect(() => {
+    if (isGlobalLoading && totalImagesToLoad > 0 && loadedImagesCount >= totalImagesToLoad) {
+      const timer = setTimeout(() => {
+        sessionStorage.setItem('rex_has_loaded', 'true');
+        setIsGlobalLoading(false);
+        setLoading(false);
+      }, 800); // Retraso estético
+      return () => clearTimeout(timer);
+    }
+  }, [loadedImagesCount, totalImagesToLoad, isGlobalLoading]);
+
+  // SEGURO ANTI-FALLOS (Fuerza el cierre a los 12 segundos si el internet es muy lento)
+  useEffect(() => {
+    if (isGlobalLoading) {
+      const fallbackTimer = setTimeout(() => {
+        sessionStorage.setItem('rex_has_loaded', 'true');
+        setIsGlobalLoading(false);
+        setLoading(false);
+      }, 12000); 
+      return () => clearTimeout(fallbackTimer);
+    }
+  }, [isGlobalLoading]);
+
+  // Manejador que incrementa el contador de forma segura
+  const handleImageLoad = () => {
+    setLoadedImagesCount(prev => prev + 1);
+  };
 
   const dynamicCategories = useMemo(() => {
     const validProducts = products.filter(p => 
@@ -255,12 +250,23 @@ export const Home = () => {
     return (
       <div className="fixed inset-0 z-[200] bg-slate-950 flex flex-col items-center justify-center p-6 sm:p-10">
         
-        {/* LOGO PARPADEANTE EN EL CENTRO */}
+        {/* DOM OCULTO: Obliga a los navegadores móviles a descargar las imágenes */}
+        <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none z-[-10]">
+          {imagesToPreload.map((url, index) => (
+            <img 
+              key={index} 
+              src={url} 
+              onLoad={handleImageLoad} 
+              onError={handleImageLoad} 
+              alt="preload"
+            />
+          ))}
+        </div>
+
         <div className="animate-pulse mb-12 transform hover:scale-105 transition-transform duration-700">
           <img src="/rexveritatislogo.webp" alt="Rex-Veritatis Logo" className="h-40 sm:h-56 w-auto object-contain drop-shadow-2xl" />
         </div>
         
-        {/* RECUADRO NEGRO DE LA BARRA DE CARGA */}
         <div className="w-full max-w-2xl bg-black/60 border border-slate-800/80 rounded-2xl p-6 md:p-8 text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] backdrop-blur-md relative overflow-hidden">
            
            <h2 className="text-xl sm:text-2xl font-black text-white tracking-widest mb-2 uppercase">
@@ -270,7 +276,6 @@ export const Home = () => {
              Espera un momento. Muchas gracias por visitar Rex-Veritatis
            </p>
            
-           {/* BARRA DE PROGRESO */}
            <div className="w-full bg-slate-900 border border-slate-700 h-3 rounded-full overflow-hidden mb-3">
              <div 
                className="bg-blue-600 h-full transition-all duration-300 ease-out shadow-[0_0_15px_rgba(37,99,235,0.6)]"
@@ -278,7 +283,6 @@ export const Home = () => {
              />
            </div>
            
-           {/* CONTADORES (Filtro numérico) */}
            <div className="flex justify-between items-center text-xs sm:text-sm font-bold text-slate-500 font-mono tracking-widest">
               <span>{loadedImagesCount} / {totalImagesToLoad} FOTOS</span>
               <span className="text-blue-500">{percentage}% COMPLETADO</span>
@@ -288,7 +292,7 @@ export const Home = () => {
     );
   }
 
-  // --- RENDERIZADO DE CARGA SECUNDARIA (Por si regresan a la pestaña) ---
+  // --- RENDERIZADO DE CARGA SECUNDARIA ---
   if (loading) {
     return (
       <div className="min-h-[50vh] flex flex-col items-center justify-center space-y-4">
