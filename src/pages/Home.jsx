@@ -1,23 +1,15 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { productService } from '../services/productService';
 import { messageService } from '../services/messageService'; 
 import { ProductCard } from '../components/ProductCard';
 import { useCart } from '../context/CartContext';
-import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 
 export const Home = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // --- ESTADOS PARA LA PANTALLA DE CARGA ---
-  const [isGlobalLoading, setIsGlobalLoading] = useState(false);
-  const [loadedImagesCount, setLoadedImagesCount] = useState(0);
-  const [totalImagesToLoad, setTotalImagesToLoad] = useState(0);
-  
-  // ANCLA DE MEMORIA: Obliga al iPhone (Safari) a no cancelar las descargas
-  const preloadImageRefs = useRef([]); 
-
   const { addItem, updateQuantity, cart } = useCart();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,6 +22,9 @@ export const Home = () => {
   const [modalImgIndex, setModalImgIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomOrigin, setZoomOrigin] = useState('50% 50%');
+  
+  // NUEVO: Estado del Skeleton Loader del Modal
+  const [isModalImgLoaded, setIsModalImgLoaded] = useState(false);
 
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactData, setContactData] = useState({ phone: '', subject: '', text: '' });
@@ -40,76 +35,13 @@ export const Home = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
+        setLoading(true);
         const data = await productService.getProducts();
         const inStockProducts = data.filter(p => p.stock > 0);
         setProducts(inStockProducts);
-
-        const hasLoadedBefore = sessionStorage.getItem('rex_has_loaded');
-        
-        if (hasLoadedBefore) {
-          setLoading(false);
-        } else {
-          setIsGlobalLoading(true); 
-          
-          // Recolectar todas las URLs únicas de las fotos
-          const allUrls = new Set();
-          inStockProducts.forEach(p => {
-            if (p.imageUrls && p.imageUrls.length > 0) {
-              p.imageUrls.forEach(url => allUrls.add(url));
-            } else if (p.imageUrl) {
-              allUrls.add(p.imageUrl);
-            }
-          });
-
-          const urlArray = Array.from(allUrls);
-          setTotalImagesToLoad(urlArray.length);
-
-          if (urlArray.length === 0) {
-            sessionStorage.setItem('rex_has_loaded', 'true');
-            setIsGlobalLoading(false);
-            setLoading(false);
-            return;
-          }
-
-          let loadedCount = 0;
-          let isFinished = false;
-
-          const finishLoading = () => {
-            if (isFinished) return;
-            isFinished = true;
-            sessionStorage.setItem('rex_has_loaded', 'true');
-            setIsGlobalLoading(false);
-            setLoading(false);
-            preloadImageRefs.current = []; // Limpiamos la memoria RAM al terminar
-          };
-          
-          const checkDone = () => {
-            loadedCount++;
-            setLoadedImagesCount(loadedCount);
-            if (loadedCount >= urlArray.length) {
-              setTimeout(finishLoading, 800); 
-            }
-          };
-
-          // Descarga agresiva en segundo plano
-          urlArray.forEach(url => {
-            const img = new Image();
-            img.onload = checkDone;
-            img.onerror = checkDone; // Si falla por internet malo, avanza sin trabarse
-            img.src = url;
-            
-            // Guardamos la imagen en el ancla para que Safari móvil no la destruya prematuramente
-            preloadImageRefs.current.push(img); 
-          });
-          
-          // SEGURO: Si un internet es excesivamente lento, entrar a los 15 segundos máximo.
-          setTimeout(() => {
-              if (!isFinished) finishLoading();
-          }, 15000);
-        }
-
       } catch (err) {
         setError('No pudimos cargar el catálogo. Intenta de nuevo más tarde.');
+      } finally {
         setLoading(false);
       }
     };
@@ -186,6 +118,7 @@ export const Home = () => {
     setSelectedProduct(product);
     setModalImgIndex(0);
     setIsZoomed(false);
+    setIsModalImgLoaded(false); // Resetea el loader al abrir modal
     setZoomOrigin('50% 50%');
     document.body.style.overflow = 'hidden'; 
   };
@@ -198,12 +131,14 @@ export const Home = () => {
 
   const nextModalImage = (e) => {
     e.stopPropagation();
+    setIsModalImgLoaded(false); // Resetea el loader al cambiar de foto
     const images = selectedProduct.imageUrls?.length ? selectedProduct.imageUrls : [selectedProduct.imageUrl];
     setModalImgIndex((prev) => (prev + 1) % images.length);
   };
 
   const prevModalImage = (e) => {
     e.stopPropagation();
+    setIsModalImgLoaded(false); // Resetea el loader al cambiar de foto
     const images = selectedProduct.imageUrls?.length ? selectedProduct.imageUrls : [selectedProduct.imageUrl];
     setModalImgIndex((prev) => (prev - 1 + images.length) % images.length);
   };
@@ -252,52 +187,11 @@ export const Home = () => {
     }
   };
 
-  // --- RENDERIZADO DE PANTALLA DE CARGA GLOBAL ---
-  if (isGlobalLoading) {
-    const percentage = totalImagesToLoad > 0 ? Math.round((loadedImagesCount / totalImagesToLoad) * 100) : 0;
-    
-    return (
-      <div className="fixed inset-0 z-[200] bg-slate-950 flex flex-col items-center justify-center p-6 sm:p-10">
-        
-        {/* LOGO PARPADEANTE EN EL CENTRO */}
-        <div className="animate-pulse mb-12 transform hover:scale-105 transition-transform duration-700">
-          <img src="/rexveritatislogo.webp" alt="Rex-Veritatis Logo" className="h-40 sm:h-56 w-auto object-contain drop-shadow-2xl" />
-        </div>
-        
-        {/* RECUADRO NEGRO DE LA BARRA DE CARGA */}
-        <div className="w-full max-w-2xl bg-black/60 border border-slate-800/80 rounded-2xl p-6 md:p-8 text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] backdrop-blur-md relative overflow-hidden">
-           
-           <h2 className="text-xl sm:text-2xl font-black text-white tracking-widest mb-2 uppercase">
-             Preparando Catálogo
-           </h2>
-           <p className="text-xs sm:text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">
-             Espera un momento. Muchas gracias por visitar Rex-Veritatis
-           </p>
-           
-           {/* BARRA DE PROGRESO */}
-           <div className="w-full bg-slate-900 border border-slate-700 h-3 rounded-full overflow-hidden mb-3">
-             <div 
-               className="bg-blue-600 h-full transition-all duration-300 ease-out shadow-[0_0_15px_rgba(37,99,235,0.6)]"
-               style={{ width: `${percentage}%` }}
-             />
-           </div>
-           
-           {/* CONTADORES (Filtro numérico) */}
-           <div className="flex justify-between items-center text-xs sm:text-sm font-bold text-slate-500 font-mono tracking-widest">
-              <span>{loadedImagesCount} / {totalImagesToLoad} FOTOS</span>
-              <span className="text-blue-500">{percentage}% COMPLETADO</span>
-           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- RENDERIZADO DE CARGA SECUNDARIA ---
   if (loading) {
     return (
       <div className="min-h-[50vh] flex flex-col items-center justify-center space-y-4">
         <Loader2 className="h-10 w-10 text-slate-900 dark:text-white animate-spin" />
-        <p className="text-gray-500 dark:text-gray-400 font-medium">Actualizando inventario...</p>
+        <p className="text-gray-500 dark:text-gray-400 font-medium">Cargando el inventario...</p>
       </div>
     );
   }
@@ -508,22 +402,30 @@ export const Home = () => {
                 const images = selectedProduct.imageUrls?.length ? selectedProduct.imageUrls : [selectedProduct.imageUrl];
                 return (
                   <>
+                    {/* --- SKELETON LOADER EN EL MODAL --- */}
+                    {!isModalImgLoaded && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gray-200 dark:bg-slate-700 animate-pulse">
+                        <ImageIcon className="h-12 w-12 text-gray-400 dark:text-slate-500 opacity-50" />
+                      </div>
+                    )}
+                    
                     <img 
                       src={images[modalImgIndex]} 
                       alt={selectedProduct.name} 
+                      onLoad={() => setIsModalImgLoaded(true)}
                       style={{ transformOrigin: isZoomed ? zoomOrigin : 'center' }}
-                      className={`w-full h-full object-cover transition-transform duration-200 ${isZoomed ? 'scale-[2.5]' : 'scale-100'}`}
+                      className={`w-full h-full object-cover transition-all duration-200 ${isZoomed ? 'scale-[2.5]' : 'scale-100'} ${isModalImgLoaded ? 'opacity-100' : 'opacity-0'}`}
                     />
                     
                     {images.length > 1 && !isZoomed && (
                       <>
-                        <button onClick={prevModalImage} className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors">
+                        <button onClick={prevModalImage} className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors z-10">
                           <ChevronLeft className="h-6 w-6 text-gray-800 dark:text-gray-200" />
                         </button>
-                        <button onClick={nextModalImage} className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors">
+                        <button onClick={nextModalImage} className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors z-10">
                           <ChevronRight className="h-6 w-6 text-gray-800 dark:text-gray-200" />
                         </button>
-                        <div className="absolute bottom-4 left-0 w-full flex justify-center space-x-2">
+                        <div className="absolute bottom-4 left-0 w-full flex justify-center space-x-2 z-10">
                           {images.map((_, idx) => (
                             <div key={idx} className={`h-2 rounded-full transition-all ${idx === modalImgIndex ? 'w-6 bg-slate-900 dark:bg-white' : 'w-2 bg-gray-400 dark:bg-gray-600'}`} />
                           ))}
@@ -534,7 +436,7 @@ export const Home = () => {
                 );
               })()}
 
-              <div className="absolute top-4 left-4 bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-lg shadow backdrop-blur-sm pointer-events-none">
+              <div className="absolute top-4 left-4 bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-lg shadow backdrop-blur-sm pointer-events-none z-10">
                 {isZoomed ? <ZoomOut className="h-5 w-5 text-gray-800 dark:text-gray-200" /> : <ZoomIn className="h-5 w-5 text-gray-800 dark:text-gray-200" />}
               </div>
             </div>
