@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { productService } from '../services/productService';
 import { messageService } from '../services/messageService'; 
 import { ProductCard } from '../components/ProductCard';
@@ -12,9 +12,11 @@ export const Home = () => {
   
   // --- ESTADOS PARA LA PANTALLA DE CARGA ---
   const [isGlobalLoading, setIsGlobalLoading] = useState(false);
-  const [imagesToPreload, setImagesToPreload] = useState([]);
   const [loadedImagesCount, setLoadedImagesCount] = useState(0);
   const [totalImagesToLoad, setTotalImagesToLoad] = useState(0);
+  
+  // ANCLA DE MEMORIA: Obliga al iPhone (Safari) a no cancelar las descargas
+  const preloadImageRefs = useRef([]); 
 
   const { addItem, updateQuantity, cart } = useCart();
 
@@ -49,6 +51,7 @@ export const Home = () => {
         } else {
           setIsGlobalLoading(true); 
           
+          // Recolectar todas las URLs únicas de las fotos
           const allUrls = new Set();
           inStockProducts.forEach(p => {
             if (p.imageUrls && p.imageUrls.length > 0) {
@@ -65,11 +68,46 @@ export const Home = () => {
             sessionStorage.setItem('rex_has_loaded', 'true');
             setIsGlobalLoading(false);
             setLoading(false);
-          } else {
-            // Guardamos las URLs para renderizarlas en el DOM oculto
-            setImagesToPreload(urlArray);
+            return;
           }
+
+          let loadedCount = 0;
+          let isFinished = false;
+
+          const finishLoading = () => {
+            if (isFinished) return;
+            isFinished = true;
+            sessionStorage.setItem('rex_has_loaded', 'true');
+            setIsGlobalLoading(false);
+            setLoading(false);
+            preloadImageRefs.current = []; // Limpiamos la memoria RAM al terminar
+          };
+          
+          const checkDone = () => {
+            loadedCount++;
+            setLoadedImagesCount(loadedCount);
+            if (loadedCount >= urlArray.length) {
+              setTimeout(finishLoading, 800); 
+            }
+          };
+
+          // Descarga agresiva en segundo plano
+          urlArray.forEach(url => {
+            const img = new Image();
+            img.onload = checkDone;
+            img.onerror = checkDone; // Si falla por internet malo, avanza sin trabarse
+            img.src = url;
+            
+            // Guardamos la imagen en el ancla para que Safari móvil no la destruya prematuramente
+            preloadImageRefs.current.push(img); 
+          });
+          
+          // SEGURO: Si un internet es excesivamente lento, entrar a los 15 segundos máximo.
+          setTimeout(() => {
+              if (!isFinished) finishLoading();
+          }, 15000);
         }
+
       } catch (err) {
         setError('No pudimos cargar el catálogo. Intenta de nuevo más tarde.');
         setLoading(false);
@@ -77,35 +115,6 @@ export const Home = () => {
     };
     fetchProducts();
   }, []);
-
-  // VIGILANTE DE PROGRESO (Cierra la carga al llegar al 100%)
-  useEffect(() => {
-    if (isGlobalLoading && totalImagesToLoad > 0 && loadedImagesCount >= totalImagesToLoad) {
-      const timer = setTimeout(() => {
-        sessionStorage.setItem('rex_has_loaded', 'true');
-        setIsGlobalLoading(false);
-        setLoading(false);
-      }, 800); // Retraso estético
-      return () => clearTimeout(timer);
-    }
-  }, [loadedImagesCount, totalImagesToLoad, isGlobalLoading]);
-
-  // SEGURO ANTI-FALLOS (Fuerza el cierre a los 12 segundos si el internet es muy lento)
-  useEffect(() => {
-    if (isGlobalLoading) {
-      const fallbackTimer = setTimeout(() => {
-        sessionStorage.setItem('rex_has_loaded', 'true');
-        setIsGlobalLoading(false);
-        setLoading(false);
-      }, 12000); 
-      return () => clearTimeout(fallbackTimer);
-    }
-  }, [isGlobalLoading]);
-
-  // Manejador que incrementa el contador de forma segura
-  const handleImageLoad = () => {
-    setLoadedImagesCount(prev => prev + 1);
-  };
 
   const dynamicCategories = useMemo(() => {
     const validProducts = products.filter(p => 
@@ -250,23 +259,12 @@ export const Home = () => {
     return (
       <div className="fixed inset-0 z-[200] bg-slate-950 flex flex-col items-center justify-center p-6 sm:p-10">
         
-        {/* DOM OCULTO: Obliga a los navegadores móviles a descargar las imágenes */}
-        <div className="absolute w-0 h-0 overflow-hidden opacity-0 pointer-events-none z-[-10]">
-          {imagesToPreload.map((url, index) => (
-            <img 
-              key={index} 
-              src={url} 
-              onLoad={handleImageLoad} 
-              onError={handleImageLoad} 
-              alt="preload"
-            />
-          ))}
-        </div>
-
+        {/* LOGO PARPADEANTE EN EL CENTRO */}
         <div className="animate-pulse mb-12 transform hover:scale-105 transition-transform duration-700">
           <img src="/rexveritatislogo.webp" alt="Rex-Veritatis Logo" className="h-40 sm:h-56 w-auto object-contain drop-shadow-2xl" />
         </div>
         
+        {/* RECUADRO NEGRO DE LA BARRA DE CARGA */}
         <div className="w-full max-w-2xl bg-black/60 border border-slate-800/80 rounded-2xl p-6 md:p-8 text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] backdrop-blur-md relative overflow-hidden">
            
            <h2 className="text-xl sm:text-2xl font-black text-white tracking-widest mb-2 uppercase">
@@ -276,6 +274,7 @@ export const Home = () => {
              Espera un momento. Muchas gracias por visitar Rex-Veritatis
            </p>
            
+           {/* BARRA DE PROGRESO */}
            <div className="w-full bg-slate-900 border border-slate-700 h-3 rounded-full overflow-hidden mb-3">
              <div 
                className="bg-blue-600 h-full transition-all duration-300 ease-out shadow-[0_0_15px_rgba(37,99,235,0.6)]"
@@ -283,6 +282,7 @@ export const Home = () => {
              />
            </div>
            
+           {/* CONTADORES (Filtro numérico) */}
            <div className="flex justify-between items-center text-xs sm:text-sm font-bold text-slate-500 font-mono tracking-widest">
               <span>{loadedImagesCount} / {totalImagesToLoad} FOTOS</span>
               <span className="text-blue-500">{percentage}% COMPLETADO</span>
