@@ -10,6 +10,11 @@ export const Home = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  // --- ESTADOS PARA LA PANTALLA DE CARGA GLOBAL ESTILO VIDEOJUEGO ---
+  const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+  const [loadedImagesCount, setLoadedImagesCount] = useState(0);
+  const [totalImagesToLoad, setTotalImagesToLoad] = useState(0);
+
   const { addItem, updateQuantity, cart } = useCart();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,22 +37,81 @@ export const Home = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        setLoading(true);
         const data = await productService.getProducts();
         const inStockProducts = data.filter(p => p.stock > 0);
         setProducts(inStockProducts);
+
+        // VERIFICACIÓN DE PRECARGA (Solo corre 1 vez por sesión)
+        const hasLoadedBefore = sessionStorage.getItem('rex_has_loaded');
+        
+        if (hasLoadedBefore) {
+          setLoading(false);
+        } else {
+          setIsGlobalLoading(true); // Activa la pantalla negra
+          
+          // Recolectar todas las URLs únicas de las fotos
+          const allUrls = new Set();
+          inStockProducts.forEach(p => {
+            if (p.imageUrls && p.imageUrls.length > 0) {
+              p.imageUrls.forEach(url => allUrls.add(url));
+            } else if (p.imageUrl) {
+              allUrls.add(p.imageUrl);
+            }
+          });
+
+          const urlArray = Array.from(allUrls);
+          setTotalImagesToLoad(urlArray.length);
+
+          // Si por alguna razón no hay imágenes, saltar directo
+          if (urlArray.length === 0) {
+            sessionStorage.setItem('rex_has_loaded', 'true');
+            setIsGlobalLoading(false);
+            setLoading(false);
+            return;
+          }
+
+          let loadedCount = 0;
+          let isFinished = false; // Bandera para evitar doble ejecución
+
+          const finishLoading = () => {
+            if (isFinished) return;
+            isFinished = true;
+            sessionStorage.setItem('rex_has_loaded', 'true');
+            setIsGlobalLoading(false);
+            setLoading(false);
+          };
+          
+          const checkDone = () => {
+            loadedCount++;
+            setLoadedImagesCount(loadedCount);
+            if (loadedCount === urlArray.length) {
+              // Pequeño retraso al 100% para que el cliente vea que terminó
+              setTimeout(finishLoading, 800); 
+            }
+          };
+
+          // Disparar la descarga de imágenes en la memoria caché
+          urlArray.forEach(url => {
+            const img = new Image();
+            img.src = url;
+            img.onload = checkDone;
+            img.onerror = checkDone; // Si falla, la contamos para no trabar el ciclo
+          });
+          
+          // Seguro Anti-Bugs: Si un internet es excesivamente lento, forzar entrada a los 12 seg.
+          setTimeout(() => {
+              if (!isFinished) finishLoading();
+          }, 12000);
+        }
+
       } catch (err) {
         setError('No pudimos cargar el catálogo. Intenta de nuevo más tarde.');
-      } finally {
         setLoading(false);
       }
     };
     fetchProducts();
   }, []);
 
-  // --- 1. LÓGICA DE FILTROS EN CASCADA (Filtros Dependientes 360°) ---
-  
-  // Categorías disponibles según la Marca, Talla y Calidad seleccionadas
   const dynamicCategories = useMemo(() => {
     const validProducts = products.filter(p => 
       (selectedBrand === 'ALL' || (p.brands?.length ? p.brands : [p.brand]).includes(selectedBrand)) &&
@@ -57,7 +121,6 @@ export const Home = () => {
     return ['ALL', ...new Set(validProducts.map(p => p.category).filter(Boolean))];
   }, [products, selectedBrand, selectedSize, selectedQuality]);
 
-  // Calidades disponibles según la Categoría, Marca y Talla seleccionadas
   const dynamicQualities = useMemo(() => {
     const validProducts = products.filter(p => 
       (selectedCategory === 'ALL' || p.category === selectedCategory) &&
@@ -67,7 +130,6 @@ export const Home = () => {
     return ['ALL', ...new Set(validProducts.map(p => p.quality).filter(Boolean))];
   }, [products, selectedCategory, selectedBrand, selectedSize]);
 
-  // Marcas disponibles según la Categoría, Calidad y Talla seleccionadas
   const dynamicBrands = useMemo(() => {
     const validProducts = products.filter(p => 
       (selectedCategory === 'ALL' || p.category === selectedCategory) &&
@@ -78,7 +140,6 @@ export const Home = () => {
     return ['ALL', ...new Set(allBrands.filter(Boolean))];
   }, [products, selectedCategory, selectedSize, selectedQuality]);
 
-  // Tallas disponibles según la Categoría, Marca y Calidad seleccionadas
   const dynamicSizes = useMemo(() => {
     const validProducts = products.filter(p => 
       (selectedCategory === 'ALL' || p.category === selectedCategory) &&
@@ -88,8 +149,6 @@ export const Home = () => {
     return ['ALL', ...new Set(validProducts.map(p => p.size).filter(Boolean))];
   }, [products, selectedCategory, selectedBrand, selectedQuality]);
 
-  // --- 2. SEGUROS DE REINICIO AUTOMÁTICO ---
-  // Si un filtro seleccionado ya no es válido debido a otro cambio, se resetea a 'ALL'
   useEffect(() => {
     if (selectedCategory !== 'ALL' && !dynamicCategories.includes(selectedCategory)) setSelectedCategory('ALL');
   }, [dynamicCategories, selectedCategory]);
@@ -106,7 +165,6 @@ export const Home = () => {
     if (selectedSize !== 'ALL' && !dynamicSizes.includes(selectedSize)) setSelectedSize('ALL');
   }, [dynamicSizes, selectedSize]);
 
-  // --- 3. FILTRADO FINAL DE PRODUCTOS ---
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const productBrands = product.brands?.length ? product.brands : [product.brand];
@@ -190,11 +248,52 @@ export const Home = () => {
     }
   };
 
+  // --- RENDERIZADO DE PANTALLA DE CARGA GLOBAL ---
+  if (isGlobalLoading) {
+    const percentage = totalImagesToLoad > 0 ? Math.round((loadedImagesCount / totalImagesToLoad) * 100) : 0;
+    
+    return (
+      <div className="fixed inset-0 z-[200] bg-slate-950 flex flex-col items-center justify-center p-6 sm:p-10">
+        
+        {/* LOGO PARPADEANTE EN EL CENTRO */}
+        <div className="animate-pulse mb-12 transform hover:scale-105 transition-transform duration-700">
+          <img src="/rexveritatislogo.webp" alt="Rex-Veritatis Logo" className="h-40 sm:h-56 w-auto object-contain drop-shadow-2xl" />
+        </div>
+        
+        {/* RECUADRO NEGRO DE LA BARRA DE CARGA */}
+        <div className="w-full max-w-2xl bg-black/60 border border-slate-800/80 rounded-2xl p-6 md:p-8 text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] backdrop-blur-md relative overflow-hidden">
+           
+           <h2 className="text-xl sm:text-2xl font-black text-white tracking-widest mb-2 uppercase">
+             Preparando Catálogo
+           </h2>
+           <p className="text-xs sm:text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">
+             Espera un momento. Muchas gracias por visitar Rex-Veritatis
+           </p>
+           
+           {/* BARRA DE PROGRESO */}
+           <div className="w-full bg-slate-900 border border-slate-700 h-3 rounded-full overflow-hidden mb-3">
+             <div 
+               className="bg-blue-600 h-full transition-all duration-300 ease-out shadow-[0_0_15px_rgba(37,99,235,0.6)]"
+               style={{ width: `${percentage}%` }}
+             />
+           </div>
+           
+           {/* CONTADORES (Filtro numérico) */}
+           <div className="flex justify-between items-center text-xs sm:text-sm font-bold text-slate-500 font-mono tracking-widest">
+              <span>{loadedImagesCount} / {totalImagesToLoad} FOTOS</span>
+              <span className="text-blue-500">{percentage}% COMPLETADO</span>
+           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDERIZADO DE CARGA SECUNDARIA (Por si regresan a la pestaña) ---
   if (loading) {
     return (
       <div className="min-h-[50vh] flex flex-col items-center justify-center space-y-4">
         <Loader2 className="h-10 w-10 text-slate-900 dark:text-white animate-spin" />
-        <p className="text-gray-500 dark:text-gray-400 font-medium">Cargando el inventario...</p>
+        <p className="text-gray-500 dark:text-gray-400 font-medium">Actualizando inventario...</p>
       </div>
     );
   }
@@ -436,7 +535,6 @@ export const Home = () => {
               </div>
             </div>
 
-            {/* LADO DERECHO: CON SCROLL TÁCTIL FLUIDO PARA MÓVILES PEQUEÑOS */}
             <div className="w-full md:w-1/2 flex flex-col flex-1 min-h-0 p-4 sm:p-6 md:p-8 bg-white dark:bg-slate-900 overflow-y-auto">
               <div className="flex-shrink-0">
                 <div className="flex justify-between items-start mb-3">
@@ -465,7 +563,6 @@ export const Home = () => {
                 </div>
               </div>
 
-              {/* SECCIÓN DE DESCRIPCIÓN CON SCROLL VISIBLE EN CELULARES */}
               <div className="flex-1 min-h-[80px] my-2 pr-1 overflow-y-auto">
                 <h4 className="text-gray-900 dark:text-white font-bold mb-1 text-sm sm:text-base sticky top-0 bg-white dark:bg-slate-900 py-1 z-10">Descripción del Producto</h4>
                 <p className="whitespace-pre-line text-xs sm:text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
