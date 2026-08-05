@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useGoogleReCaptcha } from 'react-google-recaptcha-v3'; 
 import { useCart } from '../context/CartContext';
 import { productService } from '../services/productService'; 
 import { orderService } from '../services/orderService';
@@ -8,13 +9,14 @@ import { messageService } from '../services/messageService';
 import { Trash2, ArrowLeft, MessageCircleWarning, CheckCircle2, Send, Minus, Plus, AlertTriangle, X, MessageCircle, Loader2 } from 'lucide-react'; 
 
 export const Checkout = () => {
-  // AQUÍ ESTÁ EL CAMBIO: Extraemos cartTimeLeft del hook useCart
   const { cart, total, totalItems, removeItem, clearCart, addItem, updateQuantity, cartTimeLeft } = useCart();
   const navigate = useNavigate();
+  const { executeRecaptcha } = useGoogleReCaptcha(); 
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [cooldownError, setCooldownError] = useState(''); 
 
   const [checkingStock, setCheckingStock] = useState(true);
   const [stockWarnings, setStockWarnings] = useState({});
@@ -37,14 +39,26 @@ export const Checkout = () => {
   });
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const checkCooldown = () => {
+      const lastOrder = localStorage.getItem('rex_last_order');
+      if (lastOrder) {
+        const timePassed = Date.now() - parseInt(lastOrder);
+        const hoursPassed = timePassed / (1000 * 60 * 60);
+        if (hoursPassed < 24) {
+          setCooldownError(`Has realizado un pedido recientemente. Podrás realizar otro pedido nuevo en ${Math.ceil(24 - hoursPassed)} horas.`);
+        } else {
+          localStorage.removeItem('rex_last_order');
+        }
+      }
+    };
+    checkCooldown();
+
     const validateStock = async () => {
       try {
         if (cart.length === 0) {
           setCheckingStock(false);
           return;
         }
-
         const currentProducts = await productService.getProducts();
         
         const catalogMap = {};
@@ -84,6 +98,7 @@ export const Checkout = () => {
     };
 
     validateStock();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, removeItem]); 
 
   const handleInputChange = (e) => {
@@ -92,13 +107,26 @@ export const Checkout = () => {
 
   const handleCheckout = async (e) => {
     e.preventDefault();
+    if (cooldownError) return;
+    
     if (Object.keys(stockWarnings).length > 0) {
       setError('Por favor, ajusta los productos con problemas de stock antes de confirmar el pedido.');
       return;
     }
+    
     setLoading(true);
     setError('');
+
+    if (!executeRecaptcha) {
+      setError('El sistema de seguridad no ha terminado de cargar. Espera unos segundos y vuelve a presionar el botón.');
+      setLoading(false);
+      return;
+    }
+
     try {
+      const captchaToken = await executeRecaptcha('checkout_submit');
+      if (!captchaToken) throw new Error("Verificación de seguridad fallida. Se ha detectado comportamiento de bot.");
+      
       const orderData = {
         customerName: formData.customerName,
         customerPhone: formData.customerPhone,
@@ -119,22 +147,32 @@ export const Checkout = () => {
         status: 'PENDING'
       };
 
+      // 1. PRIMERO ASEGURAMOS LA BASE DE DATOS (Lo más importante)
       const orderId = await orderService.createOrder(orderData);
       
       const orderDetails = cart.map(item => 
-        `${item.quantity}x [${item.category || 'Gorra'}] ${item.name} [${item.size || 'Unitalla'}] [${(item.brands || []).join(' X ') || 'Sin Marca'}] [${item.quality || 'N/A'}] ($${item.price})`
-      ).join(' | ');
+        `- ${item.quantity}x [${item.category || 'Gorra'}] ${item.name} [${item.size || 'Unitalla'}] [${(item.brands || []).join(' X ') || 'Sin Marca'}] [${item.quality || 'N/A'}] ($${item.price})`
+      ).join('<br>');
 
-      await emailService.sendOrderNotification({
-        id: orderId,
-        customerName: formData.customerName,
-        customerPhone: formData.customerPhone,
-        customerEmail: formData.customerEmail,
-        comments: formData.comments || 'Sin comentarios adicionales.', 
-        itemsDetails: orderDetails,
-        totalAmount: total.toLocaleString('es-MX')
-      });
+      // 2. TOLERANCIA A FALLOS: Aislamos EmailJS
+      try {
+        await emailService.sendOrderNotification({
+          id: orderId,
+          customerName: formData.customerName,
+          customerPhone: formData.customerPhone,
+          customerEmail: formData.customerEmail,
+          comments: formData.comments || 'Sin comentarios adicionales.', 
+          itemsDetails: orderDetails,
+          totalAmount: total.toLocaleString('es-MX')
+        });
+      } catch (emailError) {
+        // Si se acaban los 200 correos, el código entra aquí y NO asusta al cliente.
+        // Simplemente imprimimos un aviso silencioso en la consola para el administrador.
+        console.warn("Tolerancia a fallos activada: El pedido se guardó exitosamente en Firestore, pero la alerta de EmailJS falló (Probablemente cuota excedida).", emailError);
+      }
 
+      // 3. FINALIZAMOS EL FLUJO EXITOSAMENTE
+      localStorage.setItem('rex_last_order', Date.now().toString());
       clearCart();
       setSuccess(true);
 
@@ -355,6 +393,13 @@ export const Checkout = () => {
         <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">Finalizar Compra</h1>
       </div>
 
+      {cooldownError && (
+        <div className="mb-8 bg-yellow-50 dark:bg-yellow-900/30 border-l-4 border-yellow-500 p-4 rounded flex items-start space-x-3">
+          <AlertTriangle className="h-6 w-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+          <p className="text-yellow-700 dark:text-yellow-400 font-medium">{cooldownError}</p>
+        </div>
+      )}
+
       {error && (
         <div className="mb-8 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-4 rounded flex items-start space-x-3">
           <MessageCircleWarning className="h-6 w-6 text-red-600 dark:text-red-400 flex-shrink-0" />
@@ -385,7 +430,6 @@ export const Checkout = () => {
               </div>
             )}
 
-            {/* AQUÍ INYECTAMOS EL TEMPORIZADOR EN EL RESUMEN */}
             <div className="p-5 sm:p-6 border-b border-gray-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-800 dark:text-white">Resumen de Pedido ({totalItems} artículos)</h2>
@@ -552,10 +596,10 @@ export const Checkout = () => {
 
                 <button 
                   type="submit" 
-                  disabled={loading || checkingStock} 
+                  disabled={loading || checkingStock || !!cooldownError} 
                   className="w-full flex items-center justify-center space-x-2 bg-slate-900 dark:bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  {loading ? <span>Procesando pedido...</span> : <><Send className="h-5 w-5" /><span>Confirmar Pedido</span></>}
+                  {loading ? <span>Verificando seguridad...</span> : <><Send className="h-5 w-5" /><span>Confirmar Pedido</span></>}
                 </button>
               </div>
             </form>

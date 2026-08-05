@@ -3,7 +3,7 @@ import { productService } from '../services/productService';
 import { messageService } from '../services/messageService'; 
 import { ProductCard } from '../components/ProductCard';
 import { useCart } from '../context/CartContext';
-import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 
 export const Home = () => {
   const [products, setProducts] = useState([]);
@@ -36,8 +36,10 @@ export const Home = () => {
       try {
         setLoading(true);
         const data = await productService.getProducts();
-        const inStockProducts = data.filter(p => p.stock > 0);
-        setProducts(inStockProducts);
+        
+        // CAMBIO: Ya no filtramos los productos con stock 0. 
+        // Ahora cargamos todo el catálogo completo para mostrar los agotados.
+        setProducts(data);
       } catch (err) {
         setError('No pudimos cargar el catálogo. Intenta de nuevo más tarde.');
       } finally {

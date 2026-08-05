@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { productService } from '../services/productService';
-import { Loader2, Plus, Trash2, Rocket, AlertTriangle, CheckCircle2, Edit, Calendar, EyeOff, Eye } from 'lucide-react';
+import { Loader2, Plus, Trash2, Rocket, AlertTriangle, CheckCircle2, Edit, Calendar, EyeOff, Package } from 'lucide-react';
 
 const DEFAULT_CATEGORIES = ['Gorra', 'Playera', 'Accesorio'];
 const DEFAULT_QUALITIES = ['G5', 'Original', 'Clon', 'Premium'];
@@ -12,7 +12,6 @@ export const ProductForm = () => {
   const [managingOptions, setManagingOptions] = useState(null); 
   const [newOption, setNewOption] = useState('');
 
-  // Estado para la opción de fecha de lanzamiento: 'NOW' | 'SCHEDULED'
   const [releaseOption, setReleaseOption] = useState('NOW');
   const [scheduledDate, setScheduledDate] = useState('');
 
@@ -26,8 +25,10 @@ export const ProductForm = () => {
     stock: '',
     imageUrls: [''], 
     description: '',
-    isActive: true, // Si false, el producto estará OCULTO
-    isBoosted: false
+    isActive: true, 
+    isBoosted: false,
+    restockStatus: 'SOON', 
+    restockDate: ''        
   };
 
   const [formData, setFormData] = useState(initialFormState);
@@ -67,6 +68,9 @@ export const ProductForm = () => {
   const addArrayField = (field) => setFormData(prev => ({ ...prev, [field]: [...prev[field], ''] }));
   const removeArrayField = (index, field) => setFormData(prev => ({ ...prev, [field]: formData[field].filter((_, i) => i !== index) }));
 
+  // ESCUDO CONTRA BUG DE RESTOCK
+  const hasStock = Number(formData.stock) > 0;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -84,6 +88,10 @@ export const ProductForm = () => {
         releaseDateCalculated = new Date(scheduledDate).toISOString();
       }
 
+      if (!hasStock && formData.restockStatus === 'DATE' && !formData.restockDate) {
+        throw new Error("Seleccionaste Fecha Exacta para el Restock. Por favor elige una fecha.");
+      }
+
       const productData = {
         name: formData.name,
         category: formData.category,
@@ -98,7 +106,10 @@ export const ProductForm = () => {
         description: formData.description,
         isActive: formData.isActive,
         isBoosted: formData.isBoosted,
-        releaseDate: releaseDateCalculated
+        releaseDate: releaseDateCalculated,
+        // Limpieza automática en Firebase si hay stock
+        restockStatus: hasStock ? 'SOON' : formData.restockStatus,
+        restockDate: (!hasStock && formData.restockStatus === 'DATE') ? new Date(formData.restockDate).toISOString() : ''
       };
 
       await productService.addProduct(productData);
@@ -196,6 +207,72 @@ export const ProductForm = () => {
           </div>
         </div>
 
+        {/* PANEL DE RESTOCK (BLOQUEO CONDICIONAL) */}
+        <div className={`bg-gray-50 dark:bg-slate-800/50 p-5 rounded-xl border border-gray-200 dark:border-slate-700 transition-colors ${hasStock ? 'opacity-60 pointer-events-none' : ''}`}>
+          
+          {hasStock && (
+            <div className="mb-4 flex items-center space-x-2 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 p-2.5 rounded-lg border border-red-200 dark:border-red-800/50">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Para configurar los avisos de Restock, el stock inicial del producto debe ser 0.</span>
+            </div>
+          )}
+
+          <label className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center space-x-2">
+            <Package className="h-4 w-4 text-orange-500" />
+            <span>Si se agota, ¿Cuándo habrá Restock?</span>
+          </label>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center space-x-4 flex-wrap gap-y-2">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="restockStatus" 
+                  value="SOON" 
+                  checked={formData.restockStatus === 'SOON'} 
+                  onChange={handleChange} 
+                  className="w-4 h-4 text-slate-900 dark:text-blue-600 focus:ring-slate-900 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Próximamente</span>
+              </label>
+              
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="restockStatus" 
+                  value="DATE" 
+                  checked={formData.restockStatus === 'DATE'} 
+                  onChange={handleChange} 
+                  className="w-4 h-4 text-slate-900 dark:text-blue-600 focus:ring-slate-900 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Exacta</span>
+              </label>
+
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="restockStatus" 
+                  value="NONE" 
+                  checked={formData.restockStatus === 'NONE'} 
+                  onChange={handleChange} 
+                  className="w-4 h-4 text-slate-900 dark:text-blue-600 focus:ring-slate-900 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sin Fecha</span>
+              </label>
+            </div>
+
+            {formData.restockStatus === 'DATE' && (
+              <input 
+                type="datetime-local" 
+                name="restockDate"
+                value={formData.restockDate}
+                onChange={handleChange}
+                className="px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none transition-colors text-sm w-full sm:w-auto"
+                required={!hasStock}
+              />
+            )}
+          </div>
+        </div>
+
         {/* FECHA DE LANZAMIENTO */}
         <div className="bg-gray-50 dark:bg-slate-800/50 p-5 rounded-xl border border-gray-200 dark:border-slate-700 transition-colors">
               <label className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center space-x-2">
@@ -273,7 +350,6 @@ export const ProductForm = () => {
         {/* CHECKBOXES ADMINISTRATIVOS */}
         <div className="flex flex-col space-y-4 pt-4 border-t border-gray-100 dark:border-slate-800">
           
-          {/* OCULTAR PRODUCTO */}
           <label className="flex items-center space-x-3 cursor-pointer">
             <input 
               type="checkbox" 
@@ -288,7 +364,6 @@ export const ProductForm = () => {
             </div>
           </label>
           
-          {/* ACTIVATE BOOST */}
           <label className="flex items-center space-x-3 cursor-pointer">
             <input type="checkbox" name="isBoosted" checked={formData.isBoosted} onChange={handleChange} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
             <div className="flex items-center space-x-1 text-blue-700 dark:text-blue-400 font-bold text-sm"><Rocket className="h-4 w-4" /> <span>Activar Boost de Marketing</span></div>

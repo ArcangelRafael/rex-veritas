@@ -3,7 +3,7 @@ import { orderService } from '../services/orderService';
 import { productService } from '../services/productService'; 
 import { Clock, CheckCircle2, XCircle, Package, Loader2, Copy, ChevronDown, ChevronUp, Search, Edit, Save, Plus, Minus, Trash2, AlertTriangle, Info, X } from 'lucide-react';
 
-export const OrderList = ({ onPendingCountChange }) => { // <-- RECIBIMOS LA FUNCIÓN DEL DASHBOARD
+export const OrderList = ({ onPendingCountChange }) => { 
   const [orders, setOrders] = useState([]);
   const [catalog, setCatalog] = useState({}); 
   const [loading, setLoading] = useState(true);
@@ -63,7 +63,6 @@ export const OrderList = ({ onPendingCountChange }) => { // <-- RECIBIMOS LA FUN
     fetchOrders();
   }, []);
 
-  // NUEVO EFECTO: Siempre que los pedidos cambien, avísale al menú cuántos están pendientes
   useEffect(() => {
     if (onPendingCountChange) {
       const pendingCount = orders.filter(o => o.status === 'PENDING').length;
@@ -72,7 +71,7 @@ export const OrderList = ({ onPendingCountChange }) => { // <-- RECIBIMOS LA FUN
   }, [orders, onPendingCountChange]);
 
   const handleComplete = (orderId) => {
-    showConfirm('¿Seguro que quieres finalizar este pedido? Se moverá a concluidas.', async () => {
+    showConfirm('¿Seguro que quieres finalizar este pedido? Se sellará y se moverá a tu pestaña de Concluidas.', async () => {
       closeModal();
       try {
         setProcessingId(orderId);
@@ -88,13 +87,14 @@ export const OrderList = ({ onPendingCountChange }) => { // <-- RECIBIMOS LA FUN
   };
 
   const handleCancel = (orderId, items) => {
-    showConfirm('¿Seguro que quieres cancelar este pedido? El stock regresará a la base de datos.', async () => {
+    // MENSAJE ACTUALIZADO: Refleja la destrucción permanente del pedido
+    showConfirm('¿Seguro que quieres cancelar este pedido? Se eliminará permanentemente del sistema y el stock regresará a la tienda.', async () => {
       closeModal();
       try {
         setProcessingId(orderId);
         await orderService.cancelOrderAndReturnStock(orderId, items);
         await fetchOrders(); 
-        showSuccess("Pedido cancelado y stock devuelto exitosamente.");
+        showSuccess("Pedido cancelado y eliminado exitosamente.");
       } catch (error) {
         showError("Error al cancelar el pedido.");
       } finally {
@@ -171,9 +171,10 @@ export const OrderList = ({ onPendingCountChange }) => { // <-- RECIBIMOS LA FUN
     CANCELLED: { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20', icon: XCircle, label: 'Cancelado' }
   };
 
+  // FILTRO ACTUALIZADO: Separa exclusivamente PENDING y COMPLETED
   const baseOrders = activeTab === 'PENDING' 
     ? orders.filter(order => order.status === 'PENDING')
-    : orders.filter(order => order.status === 'COMPLETED' || order.status === 'CANCELLED');
+    : orders.filter(order => order.status === 'COMPLETED');
 
   let displayOrders = baseOrders.filter(order => 
     order.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -280,7 +281,8 @@ export const OrderList = ({ onPendingCountChange }) => { // <-- RECIBIMOS LA FUN
             activeTab === 'CONCLUIDAS' ? 'border-slate-900 dark:border-blue-500 text-slate-900 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
-          Concluidas ({orders.filter(o => o.status !== 'PENDING').length})
+          {/* CONTADOR ACTUALIZADO: Solo cuenta los finalizados con éxito */}
+          Concluidas ({orders.filter(o => o.status === 'COMPLETED').length})
         </button>
       </div>
 

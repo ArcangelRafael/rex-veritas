@@ -51,6 +51,7 @@ export const orderService = {
   completeOrder: async (orderId) => {
     try {
       const orderRef = doc(db, ordersCollection, orderId);
+      // Solo las órdenes que se completan cambian de estado y se van a tu pestaña "Concluidas"
       await updateDoc(orderRef, { status: 'COMPLETED' });
     } catch (error) {
       console.error("Error al completar el pedido:", error);
@@ -64,6 +65,7 @@ export const orderService = {
         const productRefs = items.map(item => doc(db, productsCollection, item.productId));
         const productDocs = await Promise.all(productRefs.map(ref => transaction.get(ref)));
 
+        // 1. Devolvemos el stock a la tienda
         productDocs.forEach((productDoc, index) => {
           if (productDoc.exists()) {
             const currentStock = productDoc.data().stock;
@@ -72,8 +74,9 @@ export const orderService = {
           }
         });
 
+        // 2. Destruimos el pedido por completo para que no ensucie la pestaña "Concluidas"
         const orderRef = doc(db, ordersCollection, orderId);
-        transaction.update(orderRef, { status: 'CANCELLED' });
+        transaction.delete(orderRef);
       });
     } catch (error) {
       console.error("Error al cancelar y devolver stock:", error);
@@ -81,27 +84,23 @@ export const orderService = {
     }
   },
 
-  // NUEVO: Método para modificar cantidades de un pedido existente
   modifyOrderItems: async (orderId, oldItems, newItems) => {
     try {
       await runTransaction(db, async (transaction) => {
-        // 1. Obtener IDs únicos de todos los productos involucrados
         const productIds = new Set([...oldItems.map(i => i.productId), ...newItems.map(i => i.productId)]);
         const productRefs = {};
         const productDocs = {};
 
-        // 2. Leer todos los productos de Firestore
         for (const pid of productIds) {
           productRefs[pid] = doc(db, productsCollection, pid);
           productDocs[pid] = await transaction.get(productRefs[pid]);
         }
 
-        // 3. Calcular la diferencia matemática y validar stock
         for (const pid of productIds) {
           const oldItem = oldItems.find(i => i.productId === pid) || { quantity: 0 };
           const newItem = newItems.find(i => i.productId === pid) || { quantity: 0 };
           
-          const difference = newItem.quantity - oldItem.quantity; // Si es positivo, sacamos más stock. Si es negativo, devolvemos stock.
+          const difference = newItem.quantity - oldItem.quantity; 
 
           if (difference !== 0) {
             if (!productDocs[pid].exists()) throw new Error(`El producto con ID ${pid} ya no existe en la BD.`);
@@ -113,7 +112,6 @@ export const orderService = {
           }
         }
 
-        // 4. Calcular el nuevo total y actualizar el documento de la orden
         const newTotalAmount = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const orderRef = doc(db, ordersCollection, orderId);
         transaction.update(orderRef, { items: newItems, totalAmount: newTotalAmount });

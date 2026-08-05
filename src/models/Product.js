@@ -1,5 +1,5 @@
 export class Product {
-  constructor({ id, name, brand, brands, size, price, stock, imageUrl, imageUrls, description, isActive, isBoosted, category, quality, releaseDate, inCartsCount }) {
+  constructor({ id, name, brand, brands, size, price, stock, imageUrl, imageUrls, description, isActive, isBoosted, category, quality, releaseDate, inCartsCount, restockStatus, restockDate }) {
     this.id = id || null;
     this.name = name;
     
@@ -22,8 +22,11 @@ export class Product {
     
     this.releaseDate = releaseDate || new Date().toISOString();
     
-    // NUEVO: Contador de personas peleando por el último stock
     this.inCartsCount = Number(inCartsCount) || 0;
+
+    // NUEVO: Estados de Restock
+    this.restockStatus = restockStatus || 'SOON'; // 'SOON' (Próximamente), 'DATE' (Fecha Exacta), 'NONE' (Sin Fecha)
+    this.restockDate = restockDate || '';
   }
 
   hasSufficientStock(quantity) {
@@ -46,7 +49,9 @@ export class Product {
       category: this.category,
       quality: this.quality,
       releaseDate: this.releaseDate,
-      inCartsCount: this.inCartsCount, // SE GUARDA EN FIREBASE
+      inCartsCount: this.inCartsCount, 
+      restockStatus: this.restockStatus, // SE GUARDA EN FIREBASE
+      restockDate: this.restockDate,     // SE GUARDA EN FIREBASE
       updatedAt: new Date()
     };
   }

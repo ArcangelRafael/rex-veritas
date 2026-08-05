@@ -52,7 +52,6 @@ export const ProductInventory = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- 1. EXTRACCIÓN DINÁMICA DE MARCAS (Vigila qué Categoría está seleccionada) ---
   const dynamicBrands = useMemo(() => {
     let filtered = products;
     if (filterCategory !== 'ALL') {
@@ -62,9 +61,8 @@ export const ProductInventory = () => {
     return ['ALL', ...new Set(allBrands.filter(Boolean))];
   }, [products, filterCategory]);
 
-  // --- 2. EXTRACCIÓN DINÁMICA DE CATEGORÍAS (Vigila qué Marca está seleccionada) ---
   const dynamicCategories = useMemo(() => {
-    if (filterBrand === 'ALL') return categories; // Si no hay marca, muestra todas tus categorías base
+    if (filterBrand === 'ALL') return categories; 
     
     const availableCats = new Set(
       products.filter(p => {
@@ -72,19 +70,15 @@ export const ProductInventory = () => {
         return pBrands.includes(filterBrand);
       }).map(p => p.category)
     );
-    // Muestra solo las categorías de la marca que sí existen en tus categorías configuradas
     return categories.filter(c => availableCats.has(c));
   }, [products, filterBrand, categories]);
 
-  // --- 3. SEGURO CONTRA CONFLICTOS ---
-  // Si se actualiza la Categoría y la Marca actual ya no es válida, resetea la marca.
   useEffect(() => {
     if (filterBrand !== 'ALL' && !dynamicBrands.includes(filterBrand)) {
       setFilterBrand('ALL');
     }
   }, [dynamicBrands, filterBrand]);
 
-  // Si se actualiza la Marca y la Categoría actual ya no es válida, resetea la categoría.
   useEffect(() => {
     if (filterCategory !== 'ALL' && !dynamicCategories.includes(filterCategory)) {
       setFilterCategory('ALL');
@@ -158,7 +152,9 @@ export const ProductInventory = () => {
       description: product.description || '',
       brands: product.brands?.length ? [...product.brands] : [product.brand || ''],
       imageUrls: product.imageUrls?.length ? [...product.imageUrls] : [product.imageUrl || ''],
-      isBoosted: product.isBoosted || false
+      isBoosted: product.isBoosted || false,
+      restockStatus: product.restockStatus || 'SOON', 
+      restockDate: product.restockDate ? new Date(product.restockDate).toISOString().slice(0, 16) : '' 
     });
   };
 
@@ -175,6 +171,9 @@ export const ProductInventory = () => {
   const addArrayField = (field) => setEditingProduct(prev => ({ ...prev, [field]: [...prev[field], ''] }));
   const removeArrayField = (index, field) => setEditingProduct(prev => ({ ...prev, [field]: editingProduct[field].filter((_, i) => i !== index) }));
 
+  // ESCUDO CONTRA BUG DE RESTOCK EN EDICIÓN
+  const hasStockEdit = editingProduct ? Number(editingProduct.stock) > 0 : false;
+
   const handleSave = async (e) => {
     e.preventDefault();
     try {
@@ -183,6 +182,10 @@ export const ProductInventory = () => {
       const cleanImageUrls = editingProduct.imageUrls.filter(u => u.trim() !== '');
       if (cleanBrands.length === 0) throw new Error("Debes añadir al menos una marca.");
       if (cleanImageUrls.length === 0) throw new Error("Debes añadir al menos una imagen.");
+
+      if (!hasStockEdit && editingProduct.restockStatus === 'DATE' && !editingProduct.restockDate) {
+        throw new Error("Seleccionaste Fecha Exacta para el Restock. Por favor elige una fecha válida en el calendario.");
+      }
 
       const updates = {
         name: editingProduct.name,
@@ -197,7 +200,10 @@ export const ProductInventory = () => {
         imageUrls: cleanImageUrls,
         description: editingProduct.description,
         isActive: editingProduct.isActive,
-        isBoosted: editingProduct.isBoosted
+        isBoosted: editingProduct.isBoosted,
+        // Limpieza automática en Firebase si hay stock
+        restockStatus: hasStockEdit ? 'SOON' : editingProduct.restockStatus,
+        restockDate: (!hasStockEdit && editingProduct.restockStatus === 'DATE') ? new Date(editingProduct.restockDate).toISOString() : ''
       };
       
       await productService.updateProduct(editingProduct.id, updates);
@@ -289,7 +295,6 @@ export const ProductInventory = () => {
           />
         </div>
 
-        {/* --- MENÚS DESPLEGABLES CONECTADOS ENTRE SÍ --- */}
         <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
           <div className="relative flex-1 sm:w-48">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -481,6 +486,72 @@ export const ProductInventory = () => {
                 <div>
                   <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Stock</label>
                   <input type="number" name="stock" required min="0" value={editingProduct.stock} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none transition-colors" />
+                </div>
+              </div>
+
+              {/* PANEL DE RESTOCK EN EDICIÓN (BLOQUEO CONDICIONAL) */}
+              <div className={`bg-gray-50 dark:bg-slate-800/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700 transition-colors mt-4 ${hasStockEdit ? 'opacity-60 pointer-events-none' : ''}`}>
+                
+                {hasStockEdit && (
+                  <div className="mb-4 flex items-center space-x-2 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 p-2.5 rounded-lg border border-red-200 dark:border-red-800/50">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>Cambia el stock a 0 para configurar el reabastecimiento.</span>
+                  </div>
+                )}
+
+                <label className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3 flex items-center space-x-2">
+                  <Package className="h-4 w-4 text-orange-500" />
+                  <span>Si se agota, ¿Cuándo habrá Restock?</span>
+                </label>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="flex items-center space-x-4 flex-wrap gap-y-2">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="restockStatus" 
+                        value="SOON" 
+                        checked={editingProduct.restockStatus === 'SOON'} 
+                        onChange={handleInputChange} 
+                        className="w-4 h-4 text-slate-900 dark:text-blue-600 focus:ring-slate-900 cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Próximamente</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="restockStatus" 
+                        value="DATE" 
+                        checked={editingProduct.restockStatus === 'DATE'} 
+                        onChange={handleInputChange} 
+                        className="w-4 h-4 text-slate-900 dark:text-blue-600 focus:ring-slate-900 cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Exacta</span>
+                    </label>
+
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="restockStatus" 
+                        value="NONE" 
+                        checked={editingProduct.restockStatus === 'NONE'} 
+                        onChange={handleInputChange} 
+                        className="w-4 h-4 text-slate-900 dark:text-blue-600 focus:ring-slate-900 cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sin Fecha</span>
+                    </label>
+                  </div>
+
+                  {editingProduct.restockStatus === 'DATE' && (
+                    <input 
+                      type="datetime-local" 
+                      name="restockDate"
+                      value={editingProduct.restockDate}
+                      onChange={handleInputChange}
+                      className="px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none transition-colors text-sm w-full sm:w-auto"
+                      required={!hasStockEdit}
+                    />
+                  )}
                 </div>
               </div>
 

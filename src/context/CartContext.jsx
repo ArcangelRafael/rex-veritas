@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, useEffect, useState } from 'react';
-import { productService } from '../services/productService'; // Importamos el servicio
+import { productService } from '../services/productService'; 
 
 const CartContext = createContext();
 
@@ -10,7 +10,9 @@ const ACTIONS = {
   CLEAR_CART: 'CLEAR_CART'
 };
 
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; 
+// CAMBIO 1: Reducimos el tiempo de caducidad a 12 horas exactas
+const TWELVE_HOURS = 12 * 60 * 60 * 1000; 
+const MAX_ITEMS_PER_ORDER = 5; 
 
 const cartReducer = (state, action) => {
   switch (action.type) {
@@ -49,7 +51,7 @@ export const CartProvider = ({ children }) => {
     
     if (savedCart && savedTime) {
       const now = new Date().getTime();
-      const expirationTime = parseInt(savedTime) + TWENTY_FOUR_HOURS;
+      const expirationTime = parseInt(savedTime) + TWELVE_HOURS; // Actualizado a 12 hrs
       
       if (now < expirationTime) {
         return { items: JSON.parse(savedCart) };
@@ -63,11 +65,17 @@ export const CartProvider = ({ children }) => {
 
   const [timeLeftStr, setTimeLeftStr] = useState('');
 
-  // GUARDA EL CARRITO Y RENUEVA EL TIEMPO
+  // EFECTO 1: GUARDA EL CARRITO EN LOCALSTORAGE
   useEffect(() => {
     if (state.items.length > 0) {
       localStorage.setItem('cart_rex', JSON.stringify(state.items));
-      localStorage.setItem('cart_time_rex', new Date().getTime().toString());
+      
+      // BONUS FIX: Solo guardamos la hora inicial si NO existía. 
+      // Así evitamos que el reloj se reinicie a 12hrs si agregan un segundo producto.
+      const existingTime = localStorage.getItem('cart_time_rex');
+      if (!existingTime) {
+        localStorage.setItem('cart_time_rex', new Date().getTime().toString());
+      }
     } else {
       localStorage.removeItem('cart_rex');
       localStorage.removeItem('cart_time_rex');
@@ -75,28 +83,37 @@ export const CartProvider = ({ children }) => {
     }
   }, [state.items]);
 
-  // MOTOR DEL TEMPORIZADOR (Se actualiza cada minuto)
+  // EFECTO 2: MOTOR DEL TEMPORIZADOR
   useEffect(() => {
-    if (state.items.length === 0) return;
+    if (state.items.length === 0) {
+      setTimeLeftStr('');
+      return;
+    }
 
     const updateTimer = () => {
-      const savedTime = localStorage.getItem('cart_time_rex');
-      if (!savedTime) return;
+      let savedTime = localStorage.getItem('cart_time_rex');
+      
+      // FIX RACE CONDITION: Si el localStorage no ha terminado de guardar (el microsegundo del bug 0h 0m),
+      // tomamos la hora de este preciso instante como plan de respaldo automático.
+      if (!savedTime) {
+        savedTime = new Date().getTime().toString();
+      }
 
       const now = new Date().getTime();
-      const expirationTime = parseInt(savedTime) + TWENTY_FOUR_HOURS;
+      const expirationTime = parseInt(savedTime) + TWELVE_HOURS;
       const difference = expirationTime - now;
 
       if (difference <= 0) {
-        clearCart(); // Si caduca, vacía el carrito automáticamente
+        clearCart(); 
       } else {
+        // Cálculo matemático corregido para 12 horas
         const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
         const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
         setTimeLeftStr(`${hours}h ${minutes}m`);
       }
     };
 
-    updateTimer(); 
+    updateTimer(); // Arranca inmediatamente sin esperar el primer minuto
     const interval = setInterval(updateTimer, 60000); 
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,10 +122,12 @@ export const CartProvider = ({ children }) => {
   const total = state.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const totalItems = state.items.reduce((acc, item) => acc + item.quantity, 0);
 
-  // --- LAS FUNCIONES AHORA LE AVISAN A FIREBASE PARA MANTENER LOS CONTADORES EXACTOS ---
-
   const addItem = (product, quantity = 1) => {
-    productService.updateCartCount(product.id, quantity); // Suma en Firebase
+    if (totalItems + quantity > MAX_ITEMS_PER_ORDER) {
+      alert("Límite de seguridad: Solo puedes comprar hasta 5 artículos por orden web. Para mayoreo, contáctanos directamente.");
+      return;
+    }
+    productService.updateCartCount(product.id, quantity); 
     dispatch({ 
       type: ACTIONS.ADD_ITEM, 
       payload: { 
@@ -122,7 +141,7 @@ export const CartProvider = ({ children }) => {
   const removeItem = (productId) => {
     const item = state.items.find(i => i.productId === productId);
     if (item) {
-      productService.updateCartCount(productId, -item.quantity); // Resta en Firebase
+      productService.updateCartCount(productId, -item.quantity); 
     }
     dispatch({ type: ACTIONS.REMOVE_ITEM, payload: productId });
   };
@@ -135,15 +154,18 @@ export const CartProvider = ({ children }) => {
     const item = state.items.find(i => i.productId === productId);
     if (item) {
       const difference = quantity - item.quantity;
+      if (totalItems + difference > MAX_ITEMS_PER_ORDER) {
+        alert("Límite de seguridad: Solo puedes comprar hasta 5 artículos por orden web. Para mayoreo, contáctanos directamente.");
+        return;
+      }
       if (difference !== 0) {
-        productService.updateCartCount(productId, difference); // Ajusta la diferencia en Firebase
+        productService.updateCartCount(productId, difference); 
       }
     }
     dispatch({ type: ACTIONS.UPDATE_QUANTITY, payload: { productId, quantity } });
   };
 
   const clearCart = () => {
-    // Si vacían el carrito, le restamos a Firebase todo lo que tenían
     state.items.forEach(item => {
       productService.updateCartCount(item.productId, -item.quantity);
     });
@@ -153,7 +175,7 @@ export const CartProvider = ({ children }) => {
   return (
     <CartContext.Provider value={{ 
       cart: state.items, total, totalItems, addItem, removeItem, updateQuantity, clearCart,
-      cartTimeLeft: timeLeftStr // Exportamos el tiempo para el UI
+      cartTimeLeft: timeLeftStr 
     }}>
       {children}
     </CartContext.Provider>
