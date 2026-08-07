@@ -1,16 +1,107 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { productService } from '../services/productService';
 import { messageService } from '../services/messageService'; 
+import { offerService } from '../services/offerService'; 
 import { ProductCard } from '../components/ProductCard';
+import { PromoBanner } from '../components/PromoBanner'; 
 import { useCart } from '../context/CartContext';
-import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import { Loader2, SearchX, X, ChevronLeft, ChevronRight, ShoppingCart, ZoomIn, ZoomOut, Minus, Plus, Search, MessageCircle, Send, CheckCircle2, AlertTriangle, Rocket, Package, TrendingUp } from 'lucide-react';
+
+const ProductCarousel = ({ products, onOpenModal }) => {
+  const scrollRef = useRef(null);
+  const [isHovered, setIsHovered] = useState(false);
+
+  const extendedProducts = useMemo(() => {
+    if (products.length <= 4) return products;
+    return [...products, ...products, ...products, ...products];
+  }, [products]);
+
+  useEffect(() => {
+    if (products.length <= 4 || isHovered) return;
+    
+    const interval = setInterval(() => {
+      if (scrollRef.current) {
+        const { scrollLeft, scrollWidth } = scrollRef.current;
+        const originalSetWidth = scrollWidth / 4; 
+        const cardWidth = scrollRef.current.children[0]?.clientWidth + 24 || 300; 
+
+        if (scrollLeft >= originalSetWidth * 2) {
+          scrollRef.current.style.scrollBehavior = 'auto'; 
+          scrollRef.current.scrollLeft = scrollLeft - originalSetWidth; 
+          
+          setTimeout(() => {
+            if (scrollRef.current) {
+              scrollRef.current.style.scrollBehavior = 'smooth';
+              scrollRef.current.scrollLeft += cardWidth;
+            }
+          }, 20); 
+        } else {
+          scrollRef.current.style.scrollBehavior = 'smooth';
+          scrollRef.current.scrollLeft += cardWidth;
+        }
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [products.length, isHovered]);
+
+  const scroll = (direction) => {
+    if (scrollRef.current) {
+      const amount = scrollRef.current.clientWidth * 0.8;
+      scrollRef.current.style.scrollBehavior = 'smooth';
+      scrollRef.current.scrollLeft += direction === 'left' ? -amount : amount;
+    }
+  };
+
+  return (
+    <div 
+      className="relative group -mx-2 px-2"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {products.length > 4 && (
+        <>
+          <button 
+            onClick={() => scroll('left')} 
+            className="absolute left-0 sm:-left-4 top-1/2 -translate-y-1/2 z-10 bg-white/90 dark:bg-slate-800/90 p-3 rounded-full shadow-xl opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700 hidden sm:block"
+          >
+            <ChevronLeft className="h-6 w-6 text-slate-800 dark:text-white" />
+          </button>
+          
+          <button 
+            onClick={() => scroll('right')} 
+            className="absolute right-0 sm:-right-4 top-1/2 -translate-y-1/2 z-10 bg-white/90 dark:bg-slate-800/90 p-3 rounded-full shadow-xl opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700 hidden sm:block"
+          >
+            <ChevronRight className="h-6 w-6 text-slate-800 dark:text-white" />
+          </button>
+        </>
+      )}
+      
+      <div 
+        ref={scrollRef} 
+        className="flex gap-6 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-4 pt-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
+      >
+        {extendedProducts.map((product, index) => (
+          <div key={`${product.id}-${index}`} className="snap-start shrink-0 w-[85%] sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] xl:w-[calc(25%-18px)]">
+            <ProductCard product={product} onOpenModal={onOpenModal} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 export const Home = () => {
   const [products, setProducts] = useState([]);
+  const [activeOffers, setActiveOffers] = useState([]); 
+  const [bestSellers, setBestSellers] = useState([]); 
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
   const { addItem, updateQuantity, cart } = useCart();
+
+  const [showFullCatalog, setShowFullCatalog] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('ALL');
@@ -19,10 +110,10 @@ export const Home = () => {
   const [selectedQuality, setSelectedQuality] = useState('ALL');
 
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [modalSelectedSize, setModalSelectedSize] = useState('UNITALLA'); 
   const [modalImgIndex, setModalImgIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomOrigin, setZoomOrigin] = useState('50% 50%');
-  
   const [isModalImgLoaded, setIsModalImgLoaded] = useState(false);
 
   const [showContactModal, setShowContactModal] = useState(false);
@@ -32,21 +123,44 @@ export const Home = () => {
   const [contactError, setContactError] = useState(''); 
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const data = await productService.getProducts();
         
-        // CAMBIO: Ya no filtramos los productos con stock 0. 
-        // Ahora cargamos todo el catálogo completo para mostrar los agotados.
-        setProducts(data);
+        // CORRECCIÓN DE SEGURIDAD: Ya NO descargamos "orderService.getOrders()" aquí
+        const [productsData, offersData] = await Promise.all([
+          productService.getProducts(),
+          offerService.getOffers()
+        ]);
+        
+        setProducts(productsData);
+
+        // CORRECCIÓN: Filtramos usando la variable interna de Firebase (Seguro para usuarios incógnito)
+        const topSellers = [...productsData]
+          .filter(p => p.isActive !== false && (p.totalSold || 0) > 0) 
+          .sort((a, b) => (b.totalSold || 0) - (a.totalSold || 0))
+          .slice(0, 10); 
+
+        setBestSellers(topSellers);
+
+        const now = new Date().getTime();
+        const relevantOffers = offersData.filter(o => {
+          if (!o.isActive) return false;
+          if (o.endDate && new Date(o.endDate).getTime() < now) return false; 
+          if (o.maxUses !== null && o.currentUses >= o.maxUses) return false; 
+          return true;
+        });
+
+        setActiveOffers(relevantOffers);
+
       } catch (err) {
+        console.error(err);
         setError('No pudimos cargar el catálogo. Intenta de nuevo más tarde.');
       } finally {
         setLoading(false);
       }
     };
-    fetchProducts();
+    fetchData();
   }, []);
 
   const dynamicCategories = useMemo(() => {
@@ -102,6 +216,45 @@ export const Home = () => {
     if (selectedSize !== 'ALL' && !dynamicSizes.includes(selectedSize)) setSelectedSize('ALL');
   }, [dynamicSizes, selectedSize]);
 
+  const groupedBoostedProducts = useMemo(() => {
+    const boosted = products.filter(p => p.isBoosted);
+    const grouped = {};
+    
+    boosted.forEach(product => {
+      const cat = product.category || 'Otros';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(product);
+    });
+    
+    return grouped;
+  }, [products]);
+
+  const lazyRows = useMemo(() => {
+    const rows = [];
+    
+    if (bestSellers.length > 0) {
+      rows.push({
+        id: 'BEST_SELLERS',
+        title: 'Los Más Vendidos',
+        icon: TrendingUp,
+        category: null, 
+        products: bestSellers
+      });
+    }
+
+    Object.entries(groupedBoostedProducts).forEach(([category, prods]) => {
+      rows.push({
+        id: `CAT_${category}`,
+        title: `Lo mejor en ${category}`,
+        icon: Rocket,
+        category: category, 
+        products: prods
+      });
+    });
+
+    return rows;
+  }, [bestSellers, groupedBoostedProducts]);
+
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const productBrands = product.brands?.length ? product.brands : [product.brand];
@@ -115,8 +268,36 @@ export const Home = () => {
     });
   }, [products, searchTerm, selectedBrand, selectedSize, selectedCategory, selectedQuality]);
 
+  const validActiveOffers = useMemo(() => {
+    const validOffers = activeOffers.filter(offer => {
+      if (offer.hideBanner) return false;
+
+      if (offer.type === 'COMBO') {
+        const comboIds = offer.conditions?.productIds || [];
+        if (comboIds.length === 0) return false;
+
+        for (const id of comboIds) {
+          const prod = products.find(p => p.id === id);
+          if (!prod) return false; 
+          const cartItem = cart.find(i => i.productId === id);
+          const remaining = prod.stock - (cartItem ? cartItem.quantity : 0);
+          if (remaining <= 0) return false; 
+        }
+      }
+      return true;
+    });
+
+    return validOffers.sort((a, b) => (a.bannerPosition || 1) - (b.bannerPosition || 1));
+
+  }, [activeOffers, products, cart]);
+
   const openModal = (product) => {
     setSelectedProduct(product);
+    
+    const sizesObj = product.stockSizes || { UNITALLA: product.stock || 0 };
+    const available = Object.entries(sizesObj).find(([_, qty]) => Number(qty) > 0);
+    setModalSelectedSize(available ? available[0] : Object.keys(sizesObj)[0] || 'UNITALLA');
+
     setModalImgIndex(0);
     setIsZoomed(false);
     setIsModalImgLoaded(false); 
@@ -164,6 +345,43 @@ export const Home = () => {
     setSelectedSize('ALL');
     setSelectedCategory('ALL');
     setSelectedQuality('ALL');
+    setShowFullCatalog(true); 
+  };
+
+  const handleApplyBundleFilter = (targetCategory, targetBrand, targetQuality) => {
+    setShowFullCatalog(true); 
+    setSearchTerm('');
+    setSelectedSize('ALL');
+    setSelectedCategory(targetCategory || 'ALL');
+    setSelectedBrand(targetBrand || 'ALL');
+    setSelectedQuality(targetQuality || 'ALL'); 
+    document.getElementById('catalog-filters')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleShowCategoryFullCatalog = (category) => {
+    setShowFullCatalog(true);
+    setSearchTerm('');
+    setSelectedSize('ALL');
+    setSelectedBrand('ALL');
+    setSelectedQuality('ALL');
+    setSelectedCategory(category);
+    
+    setTimeout(() => {
+      document.getElementById('catalog-filters')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
+  const handleShowFullCatalog = () => {
+    setShowFullCatalog(true);
+    setSelectedCategory('ALL'); 
+    setSelectedBrand('ALL');
+    setSelectedQuality('ALL');
+    setSelectedSize('ALL');
+    setSearchTerm('');
+    
+    setTimeout(() => {
+      document.getElementById('catalog-filters')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
   const handleContactSubmit = async (e) => {
@@ -173,13 +391,11 @@ export const Home = () => {
     try {
       await messageService.addMessage(contactData);
       setContactSuccess(true);
-      
       setTimeout(() => {
         setShowContactModal(false);
         setContactSuccess(false);
         setContactData({ phone: '', subject: '', text: '' }); 
       }, 5000); 
-
     } catch (error) {
       console.error(error);
       setContactError("De momento no es posible dejarnos un mensaje, estamos trabajando para resolverlo a la brevedad posible!");
@@ -207,22 +423,20 @@ export const Home = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 relative">
-      
-      <div className="mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors">
+      <div id="catalog-filters" className="mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors scroll-mt-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <div>
             <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">Catálogo de Productos</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1">Encuentra tus favoritos más rápido.</p>
           </div>
-
           <div className="relative w-full md:w-72 lg:w-96">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500" />
             <input 
               type="text" 
               placeholder="Buscar por nombre..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+              value={searchTerm} 
+              onChange={(e) => { setSearchTerm(e.target.value); setShowFullCatalog(true); }} 
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors" 
             />
           </div>
         </div>
@@ -230,28 +444,41 @@ export const Home = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Producto</label>
-            <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
+            <select 
+              value={selectedCategory} 
+              onChange={(e) => { setSelectedCategory(e.target.value); setShowFullCatalog(true); }} 
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+            >
               {dynamicCategories.map(cat => <option key={cat} value={cat}>{cat === 'ALL' ? 'Todos' : cat}</option>)}
             </select>
           </div>
-
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Calidad</label>
-            <select value={selectedQuality} onChange={(e) => setSelectedQuality(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
+            <select 
+              value={selectedQuality} 
+              onChange={(e) => { setSelectedQuality(e.target.value); setShowFullCatalog(true); }} 
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+            >
               {dynamicQualities.map(q => <option key={q} value={q}>{q === 'ALL' ? 'Todas' : q}</option>)}
             </select>
           </div>
-
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Marca</label>
-            <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
+            <select 
+              value={selectedBrand} 
+              onChange={(e) => { setSelectedBrand(e.target.value); setShowFullCatalog(true); }} 
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+            >
               {dynamicBrands.map(brand => <option key={brand} value={brand}>{brand === 'ALL' ? 'Todas' : brand}</option>)}
             </select>
           </div>
-
           <div>
             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Talla</label>
-            <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors">
+            <select 
+              value={selectedSize} 
+              onChange={(e) => { setSelectedSize(e.target.value); setShowFullCatalog(true); }} 
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none text-slate-900 dark:text-white transition-colors"
+            >
               {dynamicSizes.map(size => <option key={size} value={size}>{size === 'ALL' ? 'Todas' : size}</option>)}
             </select>
           </div>
@@ -271,36 +498,116 @@ export const Home = () => {
           <h3 className="text-xl md:text-2xl font-black tracking-wide">¿No encuentras un modelo en específico o quieres comprar por mayoreo?</h3>
           <p className="text-slate-300 font-medium mt-2 text-sm md:text-base">Escríbenos y un asesor de Rex-Veritatis te contactará a la brevedad posible.</p>
         </div>
-        <button 
-          onClick={() => { setShowContactModal(true); setContactError(''); }}
-          className="flex-shrink-0 flex items-center space-x-2 bg-white text-slate-900 hover:bg-gray-100 px-6 py-3 rounded-xl font-black tracking-wide shadow-md hover:scale-105 transition-all"
-        >
-          <MessageCircle className="h-5 w-5" />
-          <span>Déjanos un Mensaje</span>
+        <button onClick={() => { setShowContactModal(true); setContactError(''); }} className="flex-shrink-0 flex items-center space-x-2 bg-white text-slate-900 hover:bg-gray-100 px-6 py-3 rounded-xl font-black tracking-wide shadow-md hover:scale-105 transition-all">
+          <MessageCircle className="h-5 w-5" /><span>Déjanos un Mensaje</span>
         </button>
       </div>
 
-      {filteredProducts.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredProducts.map(product => (
-            <ProductCard key={product.id} product={product} onOpenModal={openModal} />
-          ))}
+      {validActiveOffers.length > 0 && (
+        <div className="mb-8 animate-in fade-in zoom-in-95 duration-500">
+          <PromoBanner offer={validActiveOffers[0]} products={products} onOpenModal={openModal} onFilterBundle={handleApplyBundleFilter} />
         </div>
+      )}
+
+      {!showFullCatalog ? (
+        
+        <div className="space-y-12 animate-in fade-in duration-500">
+          
+          {lazyRows.length > 0 ? (
+            lazyRows.map((row, index) => {
+              const Icon = row.icon;
+              return (
+                <div key={row.id} className="space-y-4">
+                  
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-2">
+                    <div className="flex items-center space-x-3">
+                      <Icon className={`h-6 w-6 flex-shrink-0 ${row.id === 'BEST_SELLERS' ? 'text-orange-500' : 'text-blue-500'}`} />
+                      <h2 className="text-2xl font-black text-gray-900 dark:text-white">{row.title}</h2>
+                    </div>
+                    
+                    {row.category && (
+                      <button 
+                        onClick={() => handleShowCategoryFullCatalog(row.category)}
+                        className="group flex items-center space-x-1 text-sm font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors self-start sm:self-auto"
+                      >
+                        <span>Ver catálogo completo de {row.category}</span>
+                        <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <ProductCarousel products={row.products} onOpenModal={openModal} />
+
+                  {((index === 1) || (index === 0 && lazyRows.length === 1)) && validActiveOffers.length > 1 && (
+                    <div className="pt-6 pb-2 animate-in fade-in zoom-in-95 duration-500 delay-150">
+                      <PromoBanner offer={validActiveOffers[1]} products={products} onOpenModal={openModal} onFilterBundle={handleApplyBundleFilter} />
+                    </div>
+                  )}
+
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center text-gray-500 py-8">
+               No hay productos destacados por el momento.
+            </div>
+          )}
+
+          <div className="flex flex-col md:flex-row items-center justify-between py-6 px-6 md:px-8 bg-gradient-to-br from-slate-100 to-gray-50 dark:from-slate-800/50 dark:to-slate-900/50 rounded-2xl border border-dashed border-gray-300 dark:border-slate-700 shadow-sm gap-4 mt-8">
+             <div className="flex items-center gap-4 text-center md:text-left">
+               <Package className="h-10 w-10 text-blue-500 opacity-80 hidden md:block" />
+               <div>
+                 <h3 className="text-xl md:text-2xl font-black text-gray-900 dark:text-white leading-tight">¿Quieres ver más modelos?</h3>
+                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Explora nuestra colección completa de Gorras, Playeras y Accesorios.</p>
+               </div>
+             </div>
+             <button 
+               onClick={handleShowFullCatalog} 
+               className="bg-slate-900 dark:bg-blue-600 text-white px-6 py-3 rounded-xl font-bold tracking-wider uppercase shadow-md hover:bg-slate-800 dark:hover:bg-blue-500 hover:-translate-y-0.5 transition-all w-full md:w-auto flex-shrink-0"
+             >
+                Ver Catálogo Completo
+             </button>
+          </div>
+
+        </div>
+
       ) : (
-        <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors">
-          <SearchX className="h-16 w-16 text-gray-400 dark:text-slate-600 mx-auto mb-4" />
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">No encontramos productos</h3>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">Intenta cambiar o limpiar los filtros de búsqueda.</p>
-          <button onClick={clearFilters} className="mt-4 text-blue-600 dark:text-blue-400 font-medium hover:underline">
-            Limpiar filtros
-          </button>
-        </div>
+
+        filteredProducts.length > 0 ? (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {filteredProducts.slice(0, 8).map(product => (
+                <ProductCard key={product.id} product={product} onOpenModal={openModal} />
+              ))}
+            </div>
+
+            {validActiveOffers.length > 1 && filteredProducts.length > 8 && (
+              <div className="py-2 animate-in fade-in zoom-in-95 duration-500 delay-150">
+                <PromoBanner offer={validActiveOffers[1]} products={products} onOpenModal={openModal} onFilterBundle={handleApplyBundleFilter} />
+              </div>
+            )}
+
+            {filteredProducts.length > 8 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredProducts.slice(8).map(product => (
+                  <ProductCard key={product.id} product={product} onOpenModal={openModal} />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors animate-in fade-in">
+            <SearchX className="h-16 w-16 text-gray-400 dark:text-slate-600 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">No encontramos productos</h3>
+            <p className="text-gray-500 dark:text-gray-400 mt-2">Intenta cambiar o limpiar los filtros de búsqueda.</p>
+            <button onClick={clearFilters} className="mt-4 text-blue-600 dark:text-blue-400 font-medium hover:underline">Limpiar filtros</button>
+          </div>
+        )
       )}
 
       {showContactModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-md w-full p-8 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800 relative">
-            
             {contactSuccess ? (
               <div className="text-center py-8">
                 <CheckCircle2 className="h-20 w-20 text-green-500 mx-auto mb-6" />
@@ -309,73 +616,30 @@ export const Home = () => {
               </div>
             ) : (
               <>
-                <button 
-                  onClick={() => setShowContactModal(false)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-100 dark:bg-slate-800 p-2 rounded-full transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                
+                <button onClick={() => setShowContactModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-100 dark:bg-slate-800 p-2 rounded-full transition-colors"><X className="h-5 w-5" /></button>
                 <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">Contáctanos</h2>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 font-medium">Déjanos tus datos y lo que necesitas. Te responderemos por WhatsApp.</p>
-
                 {contactError && (
                   <div className="mb-4 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 p-3 rounded-lg flex items-start space-x-3">
                     <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
                     <p className="text-red-700 dark:text-red-400 font-bold text-sm leading-snug">{contactError}</p>
                   </div>
                 )}
-
                 <form onSubmit={handleContactSubmit} className="space-y-4">
                   <div>
                     <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Tu número de WhatsApp</label>
-                    <input 
-                      type="tel" 
-                      required 
-                      value={contactData.phone}
-                      onChange={(e) => setContactData({...contactData, phone: e.target.value})}
-                      className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" 
-                      placeholder="Ej. 462 123 4567" 
-                    />
+                    <input type="tel" required value={contactData.phone} onChange={(e) => setContactData({...contactData, phone: e.target.value})} className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" placeholder="Ej. 462 123 4567" />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Asunto / Tema</label>
-                    <input 
-                      type="text" 
-                      required 
-                      value={contactData.subject}
-                      onChange={(e) => setContactData({...contactData, subject: e.target.value})}
-                      className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" 
-                      placeholder="Ej. Compras por mayoreo" 
-                    />
+                    <input type="text" required value={contactData.subject} onChange={(e) => setContactData({...contactData, subject: e.target.value})} className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" placeholder="Ej. Compras por mayoreo" />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Mensaje</label>
-                    <textarea 
-                      required
-                      rows="4"
-                      value={contactData.text}
-                      onChange={(e) => setContactData({...contactData, text: e.target.value})}
-                      className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors resize-none" 
-                      placeholder="Escribe aquí los modelos que buscas o tus dudas..."
-                    ></textarea>
+                    <textarea required rows="4" value={contactData.text} onChange={(e) => setContactData({...contactData, text: e.target.value})} className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors resize-none" placeholder="Escribe aquí los modelos que buscas o tus dudas..."></textarea>
                   </div>
-
-                  <button 
-                    type="submit" 
-                    disabled={contactLoading}
-                    className="w-full flex items-center justify-center space-x-2 bg-slate-900 dark:bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 transition-colors mt-2 shadow-lg"
-                  >
-                    {contactLoading ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4" />
-                        <span>Enviar Mensaje</span>
-                      </>
-                    )}
+                  <button type="submit" disabled={contactLoading} className="w-full flex items-center justify-center space-x-2 bg-slate-900 dark:bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 transition-colors mt-2 shadow-lg">
+                    {contactLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Send className="h-4 w-4" /><span>Enviar Mensaje</span></>}
                   </button>
                 </form>
               </>
@@ -385,62 +649,31 @@ export const Home = () => {
       )}
 
       {selectedProduct && (
-        <div 
-          onClick={closeModal} 
-          className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black bg-opacity-80 backdrop-blur-sm overflow-y-auto"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()} 
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] md:h-[600px] flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200 transition-colors my-auto"
-          >
-            <div 
-              className={`w-full md:w-1/2 h-56 sm:h-64 md:h-full bg-gray-100 dark:bg-slate-800 relative overflow-hidden flex-shrink-0 ${isZoomed ? 'cursor-move' : 'cursor-zoom-in'} group transition-colors`} 
-              onClick={toggleZoom}
-              onMouseMove={handleMouseMove}
-              onMouseLeave={() => setZoomOrigin('50% 50%')}
-            >
+        <div onClick={closeModal} className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black bg-opacity-80 backdrop-blur-sm overflow-y-auto">
+          <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] md:h-[600px] flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200 transition-colors my-auto">
+            <div className={`w-full md:w-1/2 h-56 sm:h-64 md:h-full bg-gray-100 dark:bg-slate-800 relative overflow-hidden flex-shrink-0 ${isZoomed ? 'cursor-move' : 'cursor-zoom-in'} group transition-colors`} onClick={toggleZoom} onMouseMove={handleMouseMove} onMouseLeave={() => setZoomOrigin('50% 50%')}>
               {(() => {
                 const images = selectedProduct.imageUrls?.length ? selectedProduct.imageUrls : [selectedProduct.imageUrl];
                 return (
                   <>
-                    {/* --- SKELETON LOADER EN EL MODAL --- */}
                     {!isModalImgLoaded && (
                       <div className="absolute inset-0 flex items-center justify-center bg-gray-200 dark:bg-slate-700 animate-pulse">
-                        <img 
-                          src="/rexveritatislogo.webp" 
-                          alt="Cargando..." 
-                          className="h-20 sm:h-24 w-auto opacity-20 dark:opacity-30 object-contain grayscale"
-                        />
+                        <img src="/rexveritatislogo.webp" alt="Cargando..." className="h-20 sm:h-24 w-auto opacity-20 dark:opacity-30 object-contain grayscale" />
                       </div>
                     )}
-                    
-                    <img 
-                      src={images[modalImgIndex]} 
-                      alt={selectedProduct.name} 
-                      onLoad={() => setIsModalImgLoaded(true)}
-                      style={{ transformOrigin: isZoomed ? zoomOrigin : 'center' }}
-                      className={`w-full h-full object-cover transition-all duration-200 ${isZoomed ? 'scale-[2.5]' : 'scale-100'} ${isModalImgLoaded ? 'opacity-100' : 'opacity-0'}`}
-                    />
-                    
+                    <img src={images[modalImgIndex]} alt={selectedProduct.name} onLoad={() => setIsModalImgLoaded(true)} style={{ transformOrigin: isZoomed ? zoomOrigin : 'center' }} className={`w-full h-full object-cover transition-all duration-200 ${isZoomed ? 'scale-[2.5]' : 'scale-100'} ${isModalImgLoaded ? 'opacity-100' : 'opacity-0'}`} />
                     {images.length > 1 && !isZoomed && (
                       <>
-                        <button onClick={prevModalImage} className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors z-10">
-                          <ChevronLeft className="h-6 w-6 text-gray-800 dark:text-gray-200" />
-                        </button>
-                        <button onClick={nextModalImage} className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors z-10">
-                          <ChevronRight className="h-6 w-6 text-gray-800 dark:text-gray-200" />
-                        </button>
+                        <button onClick={prevModalImage} className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors z-10"><ChevronLeft className="h-6 w-6 text-gray-800 dark:text-gray-200" /></button>
+                        <button onClick={nextModalImage} className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-full shadow hover:bg-white dark:hover:bg-slate-900 transition-colors z-10"><ChevronRight className="h-6 w-6 text-gray-800 dark:text-gray-200" /></button>
                         <div className="absolute bottom-4 left-0 w-full flex justify-center space-x-2 z-10">
-                          {images.map((_, idx) => (
-                            <div key={idx} className={`h-2 rounded-full transition-all ${idx === modalImgIndex ? 'w-6 bg-slate-900 dark:bg-white' : 'w-2 bg-gray-400 dark:bg-gray-600'}`} />
-                          ))}
+                          {images.map((_, idx) => <div key={idx} className={`h-2 rounded-full transition-all ${idx === modalImgIndex ? 'w-6 bg-slate-900 dark:bg-white' : 'w-2 bg-gray-400 dark:bg-gray-600'}`} />)}
                         </div>
                       </>
                     )}
                   </>
                 );
               })()}
-
               <div className="absolute top-4 left-4 bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-lg shadow backdrop-blur-sm pointer-events-none z-10">
                 {isZoomed ? <ZoomOut className="h-5 w-5 text-gray-800 dark:text-gray-200" /> : <ZoomIn className="h-5 w-5 text-gray-800 dark:text-gray-200" />}
               </div>
@@ -454,24 +687,47 @@ export const Home = () => {
                       {selectedProduct.brands?.length > 1 ? selectedProduct.brands.join(' X ') : (selectedProduct.brand || 'Sin Marca')}
                     </span>
                     <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 dark:text-white leading-tight">{selectedProduct.name}</h2>
-                    
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {selectedProduct.category && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.category}</span>}
                       {selectedProduct.quality && selectedProduct.quality !== 'N/A' && <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md font-bold">{selectedProduct.quality}</span>}
                     </div>
                   </div>
-                  
-                  <button onClick={closeModal} className="p-2 bg-red-500 dark:bg-red-600 rounded-full text-white hover:bg-red-600 dark:hover:bg-red-700 transition-colors flex-shrink-0 shadow-md">
-                    <X className="h-5 w-5 sm:h-6 sm:w-6" />
-                  </button>
+                  <button onClick={closeModal} className="p-2 bg-red-500 dark:bg-red-600 rounded-full text-white hover:bg-red-600 dark:hover:bg-red-700 transition-colors flex-shrink-0 shadow-md"><X className="h-5 w-5 sm:h-6 sm:w-6" /></button>
+                </div>
+                <div className="flex items-center space-x-4 mb-3">
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">${selectedProduct.price.toLocaleString('es-MX')}</span>
                 </div>
 
-                <div className="flex items-center space-x-4 mb-4">
-                  <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">${selectedProduct.price.toLocaleString('es-MX')}</span>
-                  <span className="bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 px-3 py-1 rounded-full text-xs sm:text-sm font-bold">
-                    Talla: {selectedProduct.size}
-                  </span>
-                </div>
+                {(() => {
+                  const modalSizesObj = selectedProduct.stockSizes || { UNITALLA: selectedProduct.stock || 0 };
+                  return (
+                    <div className="mb-4">
+                      <span className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Selecciona tu Talla:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(modalSizesObj).map(([sizeKey, qty]) => {
+                          const isOut = Number(qty) <= 0;
+                          const isChosen = modalSelectedSize === sizeKey;
+                          return (
+                            <button
+                              key={sizeKey}
+                              disabled={isOut}
+                              onClick={() => setModalSelectedSize(sizeKey)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                isOut
+                                  ? 'bg-gray-100 dark:bg-slate-800 text-gray-300 dark:text-slate-600 line-through cursor-not-allowed'
+                                  : isChosen
+                                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-md ring-2 ring-blue-400'
+                                  : 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              {sizeKey}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="flex-1 min-h-[80px] my-2 pr-1 overflow-y-auto">
@@ -483,9 +739,12 @@ export const Home = () => {
 
               <div className="flex-shrink-0 pt-4 border-t border-gray-100 dark:border-slate-800 mt-auto">
                 {(() => {
-                  const cartItem = cart.find(item => item.productId === selectedProduct.id);
+                  const modalSizesObj = selectedProduct.stockSizes || { UNITALLA: selectedProduct.stock || 0 };
+                  const cartItem = cart.find(item => item.productId === selectedProduct.id && item.size === modalSelectedSize);
                   const quantityInCart = cartItem ? cartItem.quantity : 0;
-                  const availableStock = selectedProduct.stock - quantityInCart;
+                  
+                  const totalModalStockForSize = Number(modalSizesObj[modalSelectedSize]) || 0;
+                  const availableStock = totalModalStockForSize - quantityInCart;
                   const isOutOfStock = availableStock <= 0;
 
                   return (
@@ -493,22 +752,22 @@ export const Home = () => {
                       <div className="flex-1">
                         {quantityInCart > 0 ? (
                           <div className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-1.5 sm:p-2 w-full">
-                            <button onClick={() => updateQuantity(selectedProduct.id, quantityInCart - 1)} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-sm text-slate-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-transform"><Minus className="h-4 w-4 sm:h-5 sm:w-5" /></button>
+                            <button onClick={() => updateQuantity(selectedProduct.id, modalSelectedSize, quantityInCart - 1)} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-sm text-slate-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-transform"><Minus className="h-4 w-4 sm:h-5 sm:w-5" /></button>
                             <div className="flex flex-col items-center justify-center">
                               <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-none">{quantityInCart}</span>
                               <span className="text-[9px] sm:text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-1">en carrito</span>
                             </div>
-                            <button onClick={() => addItem(selectedProduct)} disabled={isOutOfStock} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-slate-900 dark:bg-slate-700 rounded-lg shadow-sm text-white hover:bg-slate-800 dark:hover:bg-slate-600 active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"><Plus className="h-4 w-4 sm:h-5 sm:w-5" /></button>
+                            <button onClick={() => addItem({ ...selectedProduct, size: modalSelectedSize })} disabled={isOutOfStock} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-slate-900 dark:bg-slate-700 rounded-lg shadow-sm text-white hover:bg-slate-800 dark:hover:bg-slate-600 active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"><Plus className="h-4 w-4 sm:h-5 sm:w-5" /></button>
                           </div>
                         ) : (
-                          <button onClick={() => addItem(selectedProduct)} disabled={isOutOfStock} className={`w-full py-3 sm:py-4 rounded-xl font-bold text-base sm:text-lg flex justify-center items-center space-x-2 sm:space-x-3 transition-transform ${isOutOfStock ? 'bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-slate-900 dark:bg-blue-600 text-white hover:bg-slate-800 dark:hover:bg-blue-700 active:scale-95'}`}>
+                          <button onClick={() => addItem({ ...selectedProduct, size: modalSelectedSize })} disabled={isOutOfStock} className={`w-full py-3 sm:py-4 rounded-xl font-bold text-base sm:text-lg flex justify-center items-center space-x-2 sm:space-x-3 transition-transform ${isOutOfStock ? 'bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'bg-slate-900 dark:bg-blue-600 text-white hover:bg-slate-800 dark:hover:bg-blue-700 active:scale-95'}`}>
                             <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6" />
-                            <span>{isOutOfStock ? 'Agotado Temporalmente' : 'Añadir al Carrito'}</span>
+                            <span>{isOutOfStock ? 'Agotado en esta Talla' : 'Añadir al Carrito'}</span>
                           </button>
                         )}
                       </div>
                       <div className="text-center px-2 sm:px-4">
-                        <span className="block text-[10px] sm:text-xs font-bold text-gray-400 dark:text-gray-500 uppercase">Stock</span>
+                        <span className="block text-[10px] sm:text-xs font-bold text-gray-400 dark:text-gray-500 uppercase">Stock ({modalSelectedSize})</span>
                         <span className={`text-base sm:text-lg font-black ${availableStock > 0 ? 'text-slate-900 dark:text-white' : 'text-red-500 dark:text-red-400'}`}>{availableStock}</span>
                       </div>
                     </div>

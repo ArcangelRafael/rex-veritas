@@ -78,12 +78,10 @@ export const productService = {
     }
   },
 
-  // NUEVA FUNCIÓN: El botón de pánico del Admin para limpiar carritos atascados
   resetAllGhostCarts: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, collectionName));
       const promises = querySnapshot.docs.map(document => {
-        // Solo actualizamos los que tengan contadores para ahorrar lecturas/escrituras
         if (document.data().inCartsCount > 0) {
           return updateDoc(doc(db, collectionName, document.id), { inCartsCount: 0 });
         }

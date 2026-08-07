@@ -5,8 +5,9 @@ import { ProductForm } from '../components/ProductForm';
 import { OrderList } from '../components/OrderList';
 import { ProductInventory } from '../components/ProductInventory';
 import { MessageList } from '../components/MessageList'; 
+import { OfferManager } from '../components/OfferManager';
 import { productService } from '../services/productService'; 
-import { LogOut, PlusCircle, BarChart3, Package, ChevronDown, ChevronUp, MessageSquare, Ghost, Loader2, CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
+import { LogOut, PlusCircle, BarChart3, Package, ChevronDown, ChevronUp, MessageSquare, Ghost, Loader2, CheckCircle2, AlertTriangle, Info, X, Tag } from 'lucide-react';
 
 const AccordionSection = ({ id, title, icon: Icon, badge, badgeText, isOpen, onToggle, children }) => {
   return (
@@ -49,7 +50,6 @@ export const AdminDashboard = () => {
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanSuccess, setCleanSuccess] = useState(false);
 
-  // ESTADOS DEL MODAL GLOBAL
   const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'success', message: '', onConfirm: null });
 
   const closeModal = () => setModalConfig({ ...modalConfig, isOpen: false });
@@ -66,7 +66,6 @@ export const AdminDashboard = () => {
   };
 
   const handleCleanGhostCarts = () => {
-    // REEMPLAZO DEL ALERT POR EL MODAL ELEGANTE
     showConfirm('¿Seguro que deseas reiniciar los contadores de carritos? Esto apagará los avisos de "X personas lo tienen en su carrito" en toda la tienda.', async () => {
       closeModal();
       setIsCleaning(true);
@@ -85,18 +84,14 @@ export const AdminDashboard = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 relative">
       
-      {/* --- MODAL GLOBAL DE ALERTAS Y CONFIRMACIÓN --- */}
+      {/* MODAL CORREGIDO (Colores en Dark Mode adaptados) */}
       {modalConfig.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-60 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800">
             <div className="flex flex-col items-center text-center relative">
               
-              {/* Botón X solo si NO es de confirmación */}
               {modalConfig.type !== 'confirm' && (
-                <button 
-                  onClick={closeModal}
-                  className="absolute -top-2 -right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-100 dark:bg-slate-800 p-1.5 rounded-full transition-colors"
-                >
+                <button onClick={closeModal} className="absolute -top-2 -right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-100 dark:bg-slate-800 p-1.5 rounded-full transition-colors">
                   <X className="h-5 w-5" />
                 </button>
               )}
@@ -105,7 +100,7 @@ export const AdminDashboard = () => {
               {modalConfig.type === 'success' && <CheckCircle2 className="h-14 w-14 text-green-500 mb-4" />}
               {modalConfig.type === 'confirm' && <Info className="h-14 w-14 text-blue-500 mb-4" />}
               
-              <p className="text-gray-800 dark:text-white font-medium text-lg mb-6">{modalConfig.message}</p>
+              <p className="text-gray-800 dark:text-gray-200 font-medium text-lg mb-6">{modalConfig.message}</p>
               
               <div className="flex w-full space-x-3">
                 {modalConfig.type === 'confirm' ? (
@@ -114,7 +109,7 @@ export const AdminDashboard = () => {
                     <button onClick={modalConfig.onConfirm} className="flex-1 py-2.5 px-4 bg-slate-900 dark:bg-blue-600 text-white font-bold rounded-xl hover:bg-slate-800 dark:hover:bg-blue-700 transition-colors">Confirmar</button>
                   </>
                 ) : (
-                  <button onClick={closeModal} className="w-full py-2.5 px-4 bg-slate-900 dark:bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors">Entendido</button>
+                  <button onClick={closeModal} className="w-full py-2.5 px-4 bg-slate-900 dark:bg-blue-600 text-white font-bold rounded-xl hover:bg-slate-800 dark:hover:bg-blue-700 transition-colors">Entendido</button>
                 )}
               </div>
             </div>
@@ -122,84 +117,49 @@ export const AdminDashboard = () => {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 transition-colors">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Panel de Control</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm font-medium">
-            Administrando tienda con: <span className="text-slate-900 dark:text-gray-200">{currentUser?.email}</span>
-          </p>
+          {/* CORRECCIÓN: Email adaptado al dark mode */}
+          <p className="text-gray-500 mt-1 text-sm font-medium">Administrando tienda con: <span className="text-slate-900 dark:text-white font-bold">{currentUser?.email}</span></p>
         </div>
         
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <button 
             onClick={handleCleanGhostCarts}
             disabled={isCleaning || cleanSuccess}
-            className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors border shadow-sm w-full sm:w-auto ${
-              cleanSuccess 
-                ? 'bg-green-50 text-green-600 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/30' 
-                : 'bg-orange-50 text-orange-600 hover:bg-orange-100 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-900/30 dark:hover:bg-orange-900/40'
-            }`}
+            className={`flex items-center justify-center space-x-2 px-4 py-2 rounded-lg font-bold text-sm transition-colors border shadow-sm w-full sm:w-auto ${cleanSuccess ? 'bg-green-50 text-green-600 border-green-200' : 'bg-orange-50 text-orange-600 hover:bg-orange-100 border-orange-200 dark:bg-slate-800 dark:text-orange-400 dark:border-slate-700 dark:hover:bg-slate-700'}`}
           >
             {isCleaning ? <Loader2 className="h-4 w-4 animate-spin" /> : (cleanSuccess ? <CheckCircle2 className="h-4 w-4" /> : <Ghost className="h-4 w-4" />)}
             <span>{cleanSuccess ? 'Carritos Limpios' : 'Vaciar Carritos Fantasma'}</span>
           </button>
 
-          <button 
-            onClick={handleLogout}
-            className="flex items-center justify-center space-x-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-200 dark:border-red-900/30 font-bold text-sm w-full sm:w-auto"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Cerrar Sesión</span>
+          <button onClick={handleLogout} className="flex items-center justify-center space-x-2 bg-red-50 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100 border border-red-200 dark:bg-slate-800 dark:text-red-400 dark:border-slate-700 dark:hover:bg-slate-700 font-bold text-sm w-full sm:w-auto transition-colors">
+            <LogOut className="h-4 w-4" /><span>Cerrar Sesión</span>
           </button>
         </div>
       </div>
 
       <div className="space-y-2">
         
-        <AccordionSection 
-          id="MESSAGES" 
-          title="Mensajes y Mayoreo" 
-          icon={MessageSquare} 
-          badge={unreadMessagesCount}
-          badgeText={unreadMessagesCount === 1 ? 'MENSAJE NUEVO' : 'MENSAJES NUEVOS'}
-          isOpen={activeSection === 'MESSAGES'}
-          onToggle={setActiveSection}
-        >
+        <AccordionSection id="MESSAGES" title="Mensajes y Mayoreo" icon={MessageSquare} badge={unreadMessagesCount} badgeText="NUEVOS" isOpen={activeSection === 'MESSAGES'} onToggle={setActiveSection}>
           <MessageList onUnreadCountChange={setUnreadMessagesCount} />
         </AccordionSection>
 
-        <AccordionSection 
-          id="ORDERS" 
-          title="Gestor de Pedidos" 
-          icon={Package}
-          badge={pendingOrdersCount}
-          badgeText={pendingOrdersCount === 1 ? 'PEDIDO PENDIENTE' : 'PEDIDOS PENDIENTES'}
-          isOpen={activeSection === 'ORDERS'}
-          onToggle={setActiveSection}
-        >
+        <AccordionSection id="ORDERS" title="Gestor de Pedidos" icon={Package} badge={pendingOrdersCount} badgeText="PENDIENTES" isOpen={activeSection === 'ORDERS'} onToggle={setActiveSection}>
           <OrderList onPendingCountChange={setPendingOrdersCount} />
         </AccordionSection>
 
-        <AccordionSection 
-          id="INVENTORY" 
-          title="Modificar Producto e Inteligencia de Negocios" 
-          icon={BarChart3}
-          isOpen={activeSection === 'INVENTORY'}
-          onToggle={setActiveSection}
-        >
+        <AccordionSection id="OFFERS" title="Creador de Ofertas (Marketing)" icon={Tag} isOpen={activeSection === 'OFFERS'} onToggle={setActiveSection}>
+          <OfferManager />
+        </AccordionSection>
+
+        <AccordionSection id="INVENTORY" title="Modificar Producto e Inteligencia de Negocios" icon={BarChart3} isOpen={activeSection === 'INVENTORY'} onToggle={setActiveSection}>
           <ProductInventory />
         </AccordionSection>
 
-        <AccordionSection 
-          id="ADD_PRODUCT" 
-          title="Agregar Nuevo Producto" 
-          icon={PlusCircle}
-          isOpen={activeSection === 'ADD_PRODUCT'}
-          onToggle={setActiveSection}
-        >
-          <div className="max-w-3xl">
-            <ProductForm />
-          </div>
+        <AccordionSection id="ADD_PRODUCT" title="Agregar Nuevo Producto" icon={PlusCircle} isOpen={activeSection === 'ADD_PRODUCT'} onToggle={setActiveSection}>
+          <div className="max-w-3xl"><ProductForm /></div>
         </AccordionSection>
       </div>
     </div>

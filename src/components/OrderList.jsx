@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { orderService } from '../services/orderService';
 import { productService } from '../services/productService'; 
-import { Clock, CheckCircle2, XCircle, Package, Loader2, Copy, ChevronDown, ChevronUp, Search, Edit, Save, Plus, Minus, Trash2, AlertTriangle, Info, X } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, Package, Loader2, Copy, ChevronDown, ChevronUp, Search, Edit, Save, Plus, Minus, Trash2, AlertTriangle, Info, X, Tag } from 'lucide-react';
 
 export const OrderList = ({ onPendingCountChange }) => { 
   const [orders, setOrders] = useState([]);
@@ -17,7 +17,6 @@ export const OrderList = ({ onPendingCountChange }) => {
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [editItems, setEditItems] = useState([]);
 
-  // --- MODALES ---
   const [modalConfig, setModalConfig] = useState({
     isOpen: false,
     type: 'success', 
@@ -87,7 +86,6 @@ export const OrderList = ({ onPendingCountChange }) => {
   };
 
   const handleCancel = (orderId, items) => {
-    // MENSAJE ACTUALIZADO: Refleja la destrucción permanente del pedido
     showConfirm('¿Seguro que quieres cancelar este pedido? Se eliminará permanentemente del sistema y el stock regresará a la tienda.', async () => {
       closeModal();
       try {
@@ -118,7 +116,12 @@ export const OrderList = ({ onPendingCountChange }) => {
       return `- ${item.quantity}x [${category}] ${item.name} [${size}] [${brandsText}]${qualityText} (ID: ${item.productId})`;
     }).join('\n');
 
-    const text = `📦 PEDIDO: ${order.id}\n📅 Fecha: ${order.createdAt.toLocaleDateString('es-MX')} ${order.createdAt.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}\n👤 Cliente: ${order.customerName}\n📱 Tel: ${order.customerPhone}\n\n🛒 ARTÍCULOS:\n${formattedItems}\n\n💰 TOTAL: $${order.totalAmount.toLocaleString('es-MX')}`;
+    let extraInfo = '';
+    if (order.discountAmount > 0) {
+      extraInfo = `\n🏷️ Descuento: -$${order.discountAmount.toLocaleString('es-MX')} (${order.promoCodeApplied || 'Promoción Automática'})`;
+    }
+
+    const text = `📦 PEDIDO: ${order.id}\n📅 Fecha: ${order.createdAt.toLocaleDateString('es-MX')} ${order.createdAt.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}\n👤 Cliente: ${order.customerName}\n📱 Tel: ${order.customerPhone}\n\n🛒 ARTÍCULOS:\n${formattedItems}${extraInfo}\n\n💰 TOTAL: $${order.totalAmount.toLocaleString('es-MX')}`;
     navigator.clipboard.writeText(text);
     showSuccess('¡Información copiada al portapapeles!');
   };
@@ -171,7 +174,6 @@ export const OrderList = ({ onPendingCountChange }) => {
     CANCELLED: { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20', icon: XCircle, label: 'Cancelado' }
   };
 
-  // FILTRO ACTUALIZADO: Separa exclusivamente PENDING y COMPLETED
   const baseOrders = activeTab === 'PENDING' 
     ? orders.filter(order => order.status === 'PENDING')
     : orders.filter(order => order.status === 'COMPLETED');
@@ -281,7 +283,6 @@ export const OrderList = ({ onPendingCountChange }) => {
             activeTab === 'CONCLUIDAS' ? 'border-slate-900 dark:border-blue-500 text-slate-900 dark:text-blue-500' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
-          {/* CONTADOR ACTUALIZADO: Solo cuenta los finalizados con éxito */}
           Concluidas ({orders.filter(o => o.status === 'COMPLETED').length})
         </button>
       </div>
@@ -348,7 +349,14 @@ export const OrderList = ({ onPendingCountChange }) => {
                   <div className="p-6 bg-white dark:bg-slate-900 animate-in slide-in-from-top-2">
                     <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Datos del Cliente</p>
+                        <div className="flex items-center space-x-2 mb-1">
+                          <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase">Datos del Cliente</p>
+                          {order.emailAlertFailed && (
+                            <span title="Aviso: La alerta automática de EmailJS falló (límite de cuota excedido), pero el pedido se guardó con éxito en la base de datos." className="cursor-help flex items-center text-amber-500">
+                              <AlertTriangle className="h-4 w-4" />
+                            </span>
+                          )}
+                        </div>
                         <p className="font-bold text-gray-900 dark:text-white">{order.customerName}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">WhatsApp: {order.customerPhone}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">Email: {order.customerEmail}</p>
@@ -428,6 +436,21 @@ export const OrderList = ({ onPendingCountChange }) => {
                           );
                         })}
                       </ul>
+
+                      {/* NUEVO: ETIQUETA VISUAL DEL DESCUENTO APLICADO */}
+                      {!isEditing && (order.discountAmount > 0 || order.promoCodeApplied) && (
+                        <div className="mt-3 flex items-center justify-between bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-100 dark:border-green-800/50">
+                          <div className="flex items-center space-x-2">
+                            <Tag className="h-4 w-4 text-green-600 dark:text-green-400" />
+                            <span className="text-sm font-bold text-green-700 dark:text-green-400 uppercase">
+                              Ofertas usadas: [{order.promoCodeApplied || 'Promoción Automática'}]
+                            </span>
+                          </div>
+                          <span className="text-sm font-bold text-green-700 dark:text-green-400">
+                            - ${order.discountAmount.toLocaleString('es-MX')}
+                          </span>
+                        </div>
+                      )}
 
                       {isEditing && (
                         <div className="mt-4 flex justify-end space-x-3 border-t border-gray-200 dark:border-slate-700 pt-3">

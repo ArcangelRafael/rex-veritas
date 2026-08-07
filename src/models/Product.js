@@ -1,14 +1,18 @@
 export class Product {
-  constructor({ id, name, brand, brands, size, price, stock, imageUrl, imageUrls, description, isActive, isBoosted, category, quality, releaseDate, inCartsCount, restockStatus, restockDate }) {
+  constructor({ id, name, brand, brands, size, price, stock, stockSizes, imageUrl, imageUrls, description, isActive, isBoosted, category, quality, releaseDate, inCartsCount, restockStatus, restockDate, totalSold }) {
     this.id = id || null;
     this.name = name;
     
     this.brands = Array.isArray(brands) ? brands : (brand ? [brand] : ['']);
     this.brand = this.brands.length > 0 ? this.brands[0] : ''; 
     
-    this.size = size;
+    this.stockSizes = stockSizes || { XXL: 0, XL: 0, L: 0, M: 0, CH: 0, UNITALLA: 0 };
+    this.size = size || 'Varias'; 
+    
     this.price = Number(price);
-    this.stock = Number(stock);
+    
+    const calculatedTotalStock = Object.values(this.stockSizes).reduce((acc, curr) => acc + Number(curr), 0);
+    this.stock = calculatedTotalStock > 0 ? calculatedTotalStock : (Number(stock) || 0);
     
     this.imageUrls = Array.isArray(imageUrls) ? imageUrls : (imageUrl ? [imageUrl] : ['']);
     this.imageUrl = this.imageUrls.length > 0 ? this.imageUrls[0] : ''; 
@@ -23,14 +27,16 @@ export class Product {
     this.releaseDate = releaseDate || new Date().toISOString();
     
     this.inCartsCount = Number(inCartsCount) || 0;
+    
+    // NUEVO: Contador matemático directo en el producto
+    this.totalSold = Number(totalSold) || 0;
 
-    // NUEVO: Estados de Restock
-    this.restockStatus = restockStatus || 'SOON'; // 'SOON' (Próximamente), 'DATE' (Fecha Exacta), 'NONE' (Sin Fecha)
+    this.restockStatus = restockStatus || 'SOON'; 
     this.restockDate = restockDate || '';
   }
 
   hasSufficientStock(quantity) {
-    return this.stock >= quantity;
+    return this.stock >= quantity; 
   }
 
   toFirestore() {
@@ -38,9 +44,10 @@ export class Product {
       name: this.name,
       brand: this.brand, 
       brands: this.brands, 
-      size: this.size,
+      size: this.size, 
+      stockSizes: this.stockSizes, 
       price: this.price,
-      stock: this.stock,
+      stock: this.stock, 
       imageUrl: this.imageUrl, 
       imageUrls: this.imageUrls, 
       description: this.description,
@@ -50,8 +57,9 @@ export class Product {
       quality: this.quality,
       releaseDate: this.releaseDate,
       inCartsCount: this.inCartsCount, 
-      restockStatus: this.restockStatus, // SE GUARDA EN FIREBASE
-      restockDate: this.restockDate,     // SE GUARDA EN FIREBASE
+      totalSold: this.totalSold, // SE GUARDA EN FIREBASE
+      restockStatus: this.restockStatus, 
+      restockDate: this.restockDate,     
       updatedAt: new Date()
     };
   }

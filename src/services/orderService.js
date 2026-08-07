@@ -9,20 +9,42 @@ export const orderService = {
   createOrder: async (orderData) => {
     try {
       const orderId = await runTransaction(db, async (transaction) => {
-        const productRefs = orderData.items.map(item => doc(db, productsCollection, item.productId));
-        const productDocs = await Promise.all(productRefs.map(ref => transaction.get(ref)));
+        const productIds = new Set(orderData.items.map(i => i.productId));
+        const productRefs = {};
+        const productDocs = {};
 
-        productDocs.forEach((productDoc, index) => {
-          const item = orderData.items[index];
-          if (!productDoc.exists()) throw new Error(`El producto ${item.name} ya no existe.`);
-          if (productDoc.data().stock < item.quantity) throw new Error(`Stock insuficiente para: ${item.name}`);
+        for (const pid of productIds) {
+          productRefs[pid] = doc(db, productsCollection, pid);
+          productDocs[pid] = await transaction.get(productRefs[pid]);
+        }
+
+        const stockDeductions = {};
+        orderData.items.forEach(item => {
+          if (!stockDeductions[item.productId]) stockDeductions[item.productId] = { total: 0, sizes: {} };
+          stockDeductions[item.productId].total += item.quantity;
+          stockDeductions[item.productId].sizes[item.size] = (stockDeductions[item.productId].sizes[item.size] || 0) + item.quantity;
         });
 
-        productDocs.forEach((productDoc, index) => {
-          const item = orderData.items[index];
-          const newStock = productDoc.data().stock - item.quantity;
-          transaction.update(productRefs[index], { stock: newStock });
-        });
+        for (const pid of productIds) {
+          const productDoc = productDocs[pid];
+          if (!productDoc.exists()) throw new Error(`Uno de los productos en tu carrito ya no existe.`);
+          const currentData = productDoc.data();
+          const deductions = stockDeductions[pid];
+          
+          // NUEVO: Sumamos la cantidad vendida al historial histórico del producto
+          const firestoreUpdates = { 
+            stock: currentData.stock - deductions.total,
+            totalSold: (currentData.totalSold || 0) + deductions.total
+          };
+          
+          Object.entries(deductions.sizes).forEach(([size, qty]) => {
+             const currentSizeStock = currentData.stockSizes && currentData.stockSizes[size] !== undefined ? currentData.stockSizes[size] : currentData.stock;
+             if (currentSizeStock < qty) throw new Error(`Stock insuficiente para la talla ${size}.`);
+             firestoreUpdates[`stockSizes.${size}`] = currentSizeStock - qty;
+          });
+          
+          transaction.update(productRefs[pid], firestoreUpdates);
+        }
 
         const order = new Order(orderData);
         const newOrderRef = doc(collection(db, ordersCollection));
@@ -51,7 +73,6 @@ export const orderService = {
   completeOrder: async (orderId) => {
     try {
       const orderRef = doc(db, ordersCollection, orderId);
-      // Solo las órdenes que se completan cambian de estado y se van a tu pestaña "Concluidas"
       await updateDoc(orderRef, { status: 'COMPLETED' });
     } catch (error) {
       console.error("Error al completar el pedido:", error);
@@ -62,19 +83,42 @@ export const orderService = {
   cancelOrderAndReturnStock: async (orderId, items) => {
     try {
       await runTransaction(db, async (transaction) => {
-        const productRefs = items.map(item => doc(db, productsCollection, item.productId));
-        const productDocs = await Promise.all(productRefs.map(ref => transaction.get(ref)));
+        const productIds = new Set(items.map(i => i.productId));
+        const productRefs = {};
+        const productDocs = {};
 
-        // 1. Devolvemos el stock a la tienda
-        productDocs.forEach((productDoc, index) => {
-          if (productDoc.exists()) {
-            const currentStock = productDoc.data().stock;
-            const quantityToReturn = items[index].quantity;
-            transaction.update(productRefs[index], { stock: currentStock + quantityToReturn });
-          }
+        for (const pid of productIds) {
+          productRefs[pid] = doc(db, productsCollection, pid);
+          productDocs[pid] = await transaction.get(productRefs[pid]);
+        }
+
+        const stockReturns = {}; 
+        items.forEach(item => {
+          if (!stockReturns[item.productId]) stockReturns[item.productId] = { total: 0, sizes: {} };
+          stockReturns[item.productId].total += item.quantity;
+          stockReturns[item.productId].sizes[item.size] = (stockReturns[item.productId].sizes[item.size] || 0) + item.quantity;
         });
 
-        // 2. Destruimos el pedido por completo para que no ensucie la pestaña "Concluidas"
+        for (const pid of productIds) {
+          if (productDocs[pid].exists()) {
+             const currentData = productDocs[pid].data();
+             const returns = stockReturns[pid];
+             
+             // NUEVO: Restamos las ventas porque se canceló el pedido
+             const firestoreUpdates = { 
+               stock: currentData.stock + returns.total,
+               totalSold: Math.max(0, (currentData.totalSold || 0) - returns.total)
+             };
+             
+             Object.entries(returns.sizes).forEach(([size, qty]) => {
+               const currentSizeStock = currentData.stockSizes && currentData.stockSizes[size] !== undefined ? currentData.stockSizes[size] : 0;
+               firestoreUpdates[`stockSizes.${size}`] = currentSizeStock + qty;
+             });
+
+             transaction.update(productRefs[pid], firestoreUpdates);
+          }
+        }
+
         const orderRef = doc(db, ordersCollection, orderId);
         transaction.delete(orderRef);
       });
@@ -96,19 +140,41 @@ export const orderService = {
           productDocs[pid] = await transaction.get(productRefs[pid]);
         }
 
-        for (const pid of productIds) {
-          const oldItem = oldItems.find(i => i.productId === pid) || { quantity: 0 };
-          const newItem = newItems.find(i => i.productId === pid) || { quantity: 0 };
-          
-          const difference = newItem.quantity - oldItem.quantity; 
+        const stockUpdates = {}; 
 
-          if (difference !== 0) {
+        oldItems.forEach(item => {
+          if (!stockUpdates[item.productId]) stockUpdates[item.productId] = { totalDiff: 0, sizes: {} };
+          stockUpdates[item.productId].totalDiff -= item.quantity;
+          stockUpdates[item.productId].sizes[item.size] = (stockUpdates[item.productId].sizes[item.size] || 0) - item.quantity;
+        });
+
+        newItems.forEach(item => {
+          if (!stockUpdates[item.productId]) stockUpdates[item.productId] = { totalDiff: 0, sizes: {} };
+          stockUpdates[item.productId].totalDiff += item.quantity;
+          stockUpdates[item.productId].sizes[item.size] = (stockUpdates[item.productId].sizes[item.size] || 0) + item.quantity;
+        });
+
+        for (const pid of productIds) {
+          const updateData = stockUpdates[pid];
+          if (Object.keys(updateData.sizes).some(size => updateData.sizes[size] !== 0)) {
             if (!productDocs[pid].exists()) throw new Error(`El producto con ID ${pid} ya no existe en la BD.`);
-            const currentStock = productDocs[pid].data().stock;
+            const currentData = productDocs[pid].data();
             
-            if (currentStock < difference) throw new Error(`Stock insuficiente para agregar más unidades del producto ID: ${pid}`);
+            // NUEVO: Ajustamos las ventas según la modificación
+            const firestoreUpdates = { 
+              stock: currentData.stock - updateData.totalDiff,
+              totalSold: Math.max(0, (currentData.totalSold || 0) + updateData.totalDiff)
+            };
             
-            transaction.update(productRefs[pid], { stock: currentStock - difference });
+            Object.entries(updateData.sizes).forEach(([size, diff]) => {
+               if (diff !== 0) {
+                 const currentSizeStock = currentData.stockSizes && currentData.stockSizes[size] !== undefined ? currentData.stockSizes[size] : 0;
+                 if (currentSizeStock < diff) throw new Error(`Stock insuficiente para la talla ${size}`);
+                 firestoreUpdates[`stockSizes.${size}`] = currentSizeStock - diff;
+               }
+            });
+            
+            transaction.update(productRefs[pid], firestoreUpdates);
           }
         }
 

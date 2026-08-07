@@ -20,9 +20,9 @@ export const ProductForm = () => {
     category: categories[0] || 'Gorra',
     quality: qualities[0] || 'G5',
     brands: [''], 
-    size: '',
     price: '',
-    stock: '',
+    // NUEVO: Objeto de stock por tallas
+    stockSizes: { XXL: 0, XL: 0, L: 0, M: 0, CH: 0, UNITALLA: 0 },
     imageUrls: [''], 
     description: '',
     isActive: true, 
@@ -68,8 +68,21 @@ export const ProductForm = () => {
   const addArrayField = (field) => setFormData(prev => ({ ...prev, [field]: [...prev[field], ''] }));
   const removeArrayField = (index, field) => setFormData(prev => ({ ...prev, [field]: formData[field].filter((_, i) => i !== index) }));
 
-  // ESCUDO CONTRA BUG DE RESTOCK
-  const hasStock = Number(formData.stock) > 0;
+  // Controlador especial para la cuadrícula de tallas
+  const handleStockSizeChange = (sizeName, value) => {
+    const numValue = Math.max(0, Number(value)); // Evitar números negativos
+    setFormData(prev => ({
+      ...prev,
+      stockSizes: {
+        ...prev.stockSizes,
+        [sizeName]: numValue
+      }
+    }));
+  };
+
+  // CÁLCULO EN VIVO: Sumamos todo el stock de las tallas para ver si hay stock general
+  const totalStockCalculated = Object.values(formData.stockSizes).reduce((acc, curr) => acc + Number(curr), 0);
+  const hasStock = totalStockCalculated > 0;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -80,7 +93,6 @@ export const ProductForm = () => {
       if (cleanBrands.length === 0) throw new Error("Debes añadir al menos una marca.");
       if (cleanImageUrls.length === 0) throw new Error("Debes añadir al menos una URL de imagen.");
       if (Number(formData.price) <= 0) throw new Error("El precio debe ser mayor a 0.");
-      if (Number(formData.stock) < 0) throw new Error("El stock no puede ser negativo.");
 
       let releaseDateCalculated = new Date().toISOString();
       if (releaseOption === 'SCHEDULED') {
@@ -98,16 +110,14 @@ export const ProductForm = () => {
         quality: formData.quality,
         brand: cleanBrands[0], 
         brands: cleanBrands,   
-        size: formData.size,
+        stockSizes: formData.stockSizes, // Inyectamos el objeto de tallas
         price: Number(formData.price),
-        stock: Number(formData.stock),
         imageUrl: cleanImageUrls[0], 
         imageUrls: cleanImageUrls,   
         description: formData.description,
         isActive: formData.isActive,
         isBoosted: formData.isBoosted,
         releaseDate: releaseDateCalculated,
-        // Limpieza automática en Firebase si hay stock
         restockStatus: hasStock ? 'SOON' : formData.restockStatus,
         restockDate: (!hasStock && formData.restockStatus === 'DATE') ? new Date(formData.restockDate).toISOString() : ''
       };
@@ -194,26 +204,44 @@ export const ProductForm = () => {
             <input type="text" name="name" required value={formData.name} onChange={handleChange} placeholder="Ej. Los Angeles" className="w-full px-4 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" />
           </div>
           <div>
-            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Talla</label>
-            <input type="text" name="size" required value={formData.size} onChange={handleChange} placeholder="Ej. Unitalla, M, L" className="w-full px-4 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" />
-          </div>
-          <div>
             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Precio (MXN)</label>
             <input type="number" name="price" required min="0" value={formData.price} onChange={handleChange} placeholder="Ej. 450" className="w-full px-4 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" />
           </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Stock Inicial</label>
-            <input type="number" name="stock" required min="0" value={formData.stock} onChange={handleChange} placeholder="Ej. 10" className="w-full px-4 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 outline-none transition-colors" />
+
+          {/* LA NUEVA CUADRÍCULA 3x2 DE TALLAS */}
+          <div className="md:col-span-2 bg-gray-50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Inventario por Tallas</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+              {Object.keys(formData.stockSizes).map(sizeLabel => (
+                <div key={sizeLabel} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-3 flex flex-col items-center justify-center shadow-sm">
+                  <span className="text-xs font-black text-slate-800 dark:text-slate-200 mb-2 uppercase tracking-widest">{sizeLabel}</span>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={formData.stockSizes[sizeLabel] === 0 ? '' : formData.stockSizes[sizeLabel]} 
+                    onChange={(e) => handleStockSizeChange(sizeLabel, e.target.value)}
+                    placeholder="0"
+                    className="w-16 text-center font-bold px-2 py-1 border border-gray-300 dark:border-slate-600 rounded bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-right">
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Stock Total: </span>
+              <span className={`text-sm font-black ml-1 ${totalStockCalculated > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
+                {totalStockCalculated} unidades
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* PANEL DE RESTOCK (BLOQUEO CONDICIONAL) */}
+        {/* PANEL DE RESTOCK (Mantiene el mismo comportamiento usando la sumatoria matemática) */}
         <div className={`bg-gray-50 dark:bg-slate-800/50 p-5 rounded-xl border border-gray-200 dark:border-slate-700 transition-colors ${hasStock ? 'opacity-60 pointer-events-none' : ''}`}>
           
           {hasStock && (
             <div className="mb-4 flex items-center space-x-2 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 p-2.5 rounded-lg border border-red-200 dark:border-red-800/50">
               <AlertTriangle className="h-4 w-4" />
-              <span>Para configurar los avisos de Restock, el stock inicial del producto debe ser 0.</span>
+              <span>Para configurar los avisos de Restock, el stock total sumado debe ser 0.</span>
             </div>
           )}
 

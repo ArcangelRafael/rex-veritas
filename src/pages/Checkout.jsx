@@ -4,12 +4,13 @@ import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 import { useCart } from '../context/CartContext';
 import { productService } from '../services/productService'; 
 import { orderService } from '../services/orderService';
+import { offerService } from '../services/offerService'; 
 import { emailService } from '../services/emailService';
 import { messageService } from '../services/messageService'; 
-import { Trash2, ArrowLeft, MessageCircleWarning, CheckCircle2, Send, Minus, Plus, AlertTriangle, X, MessageCircle, Loader2 } from 'lucide-react'; 
+import { Trash2, ArrowLeft, MessageCircleWarning, CheckCircle2, Send, Minus, Plus, AlertTriangle, X, MessageCircle, Loader2, Tag } from 'lucide-react'; 
 
 export const Checkout = () => {
-  const { cart, total, totalItems, removeItem, clearCart, addItem, updateQuantity, cartTimeLeft } = useCart();
+  const { cart, total, subTotal, totalItems, removeItem, clearCart, addItem, updateQuantity, cartTimeLeft, discountAmount, appliedPromoCode, promoError, applyPromoCode, removePromoCode } = useCart();
   const navigate = useNavigate();
   const { executeRecaptcha } = useGoogleReCaptcha(); 
   
@@ -30,6 +31,8 @@ export const Checkout = () => {
   const [contactLoading, setContactLoading] = useState(false);
   const [contactSuccess, setContactSuccess] = useState(false);
   const [contactError, setContactError] = useState('');
+
+  const [inputCode, setInputCode] = useState('');
 
   const [formData, setFormData] = useState({
     customerName: '',
@@ -73,17 +76,21 @@ export const Checkout = () => {
         cart.forEach(item => {
           const productInDb = currentProducts.find(p => p.id === item.productId);
           
-          if (!productInDb || productInDb.stock === 0) {
+          // NUEVO: Verificamos el stock específico de la talla
+          const sizeStock = productInDb?.stockSizes ? productInDb.stockSizes[item.size] : productInDb?.stock;
+
+          if (!productInDb || sizeStock === 0) {
             newlyRemoved.push(item);
-            removeItem(item.productId); 
-          } else if (productInDb.stock < item.quantity) {
-            warnings[item.productId] = `Tenías ${item.quantity} en el carrito, pero el stock actual es ${productInDb.stock}. Por favor, ajusta la cantidad.`;
+            removeItem(item.productId, item.size); 
+          } else if (sizeStock < item.quantity) {
+            // Clave única para la advertencia visual
+            warnings[`${item.productId}_${item.size}`] = `Tenías ${item.quantity} de la talla ${item.size}, pero el stock actual es ${sizeStock}. Por favor, ajusta la cantidad.`;
           }
         });
         
         if (newlyRemoved.length > 0) {
           setRemovedProducts(prev => {
-            const unique = newlyRemoved.filter(n => !prev.some(p => p.productId === n.productId));
+            const unique = newlyRemoved.filter(n => !prev.some(p => p.productId === n.productId && p.size === n.size));
             if (unique.length > 0) setShowRemovedModal(true);
             return [...prev, ...unique];
           });
@@ -105,6 +112,14 @@ export const Checkout = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleApplyCode = (e) => {
+    e.preventDefault();
+    if (inputCode.trim() !== '') {
+      const success = applyPromoCode(inputCode);
+      if(success) setInputCode('');
+    }
+  };
+
   const handleCheckout = async (e) => {
     e.preventDefault();
     if (cooldownError) return;
@@ -124,6 +139,20 @@ export const Checkout = () => {
     }
 
     try {
+      let offerToIncrement = null;
+      if (appliedPromoCode) {
+        const allOffers = await offerService.getOffers(); 
+        const targetOffer = allOffers.find(o => o.promoCode === appliedPromoCode);
+        
+        if (!targetOffer || !targetOffer.isValid()) {
+            removePromoCode(); 
+            setError(`¡Ups! Alguien más acaba de usar la última oportunidad del cupón "${appliedPromoCode}" o caduco antes de que concretaras tu compra. El total se ha recalculado, vuelve a confirmar tu pedido si deseas continuar con la compra.`);
+            setLoading(false);
+            return; 
+        }
+        offerToIncrement = targetOffer.id;
+      }
+
       const captchaToken = await executeRecaptcha('checkout_submit');
       if (!captchaToken) throw new Error("Verificación de seguridad fallida. Se ha detectado comportamiento de bot.");
       
@@ -143,18 +172,28 @@ export const Checkout = () => {
           size: item.size || 'Unitalla',
           brands: item.brands || []
         })),
+        subTotal: subTotal || total, 
+        discountAmount: discountAmount || 0,
+        promoCodeApplied: appliedPromoCode || '',
         totalAmount: total,
         status: 'PENDING'
       };
 
-      // 1. PRIMERO ASEGURAMOS LA BASE DE DATOS (Lo más importante)
       const orderId = await orderService.createOrder(orderData);
       
+      if (offerToIncrement) {
+        await offerService.incrementOfferUsage(offerToIncrement);
+      }
+
       const orderDetails = cart.map(item => 
-        `- ${item.quantity}x [${item.category || 'Gorra'}] ${item.name} [${item.size || 'Unitalla'}] [${(item.brands || []).join(' X ') || 'Sin Marca'}] [${item.quality || 'N/A'}] ($${item.price})`
+        `- ${item.quantity}x [${item.category || 'Gorra'}] ${item.name} [Talla: ${item.size || 'Unitalla'}] [${(item.brands || []).join(' X ') || 'Sin Marca'}] [${item.quality || 'N/A'}] ($${item.price})`
       ).join('<br>');
 
-      // 2. TOLERANCIA A FALLOS: Aislamos EmailJS
+      let extraMailInfo = '';
+      if(discountAmount > 0) {
+         extraMailInfo = `<br><br><strong>Subtotal:</strong> $${(subTotal || total).toLocaleString('es-MX')}<br><strong>Descuento:</strong> -$${discountAmount.toLocaleString('es-MX')} ${appliedPromoCode ? `(Cupón: ${appliedPromoCode})` : ''}<br>`;
+      }
+
       try {
         await emailService.sendOrderNotification({
           id: orderId,
@@ -162,16 +201,13 @@ export const Checkout = () => {
           customerPhone: formData.customerPhone,
           customerEmail: formData.customerEmail,
           comments: formData.comments || 'Sin comentarios adicionales.', 
-          itemsDetails: orderDetails,
+          itemsDetails: orderDetails + extraMailInfo,
           totalAmount: total.toLocaleString('es-MX')
         });
       } catch (emailError) {
-        // Si se acaban los 200 correos, el código entra aquí y NO asusta al cliente.
-        // Simplemente imprimimos un aviso silencioso en la consola para el administrador.
-        console.warn("Tolerancia a fallos activada: El pedido se guardó exitosamente en Firestore, pero la alerta de EmailJS falló (Probablemente cuota excedida).", emailError);
+        console.warn("Tolerancia a fallos activada: El pedido se guardó exitosamente en Firestore, pero la alerta de EmailJS falló.", emailError);
       }
 
-      // 3. FINALIZAMOS EL FLUJO EXITOSAMENTE
       localStorage.setItem('rex_last_order', Date.now().toString());
       clearCart();
       setSuccess(true);
@@ -269,7 +305,7 @@ export const Checkout = () => {
               {removedProducts.map((p, idx) => (
                 <div key={idx} className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 p-4 rounded-xl">
                   <p className="text-orange-800 dark:text-orange-300 font-medium text-sm leading-relaxed mb-3">
-                    El producto <strong className="font-black text-orange-900 dark:text-orange-200">{p.name}</strong> que tenías en tu carrito lo han comprado y se ha agotado el stock, por lo que lo hemos eliminado de tu orden.
+                    El producto <strong className="font-black text-orange-900 dark:text-orange-200">{p.name} (Talla: {p.size})</strong> que tenías en tu carrito lo han comprado y se ha agotado el stock en esa talla, por lo que lo hemos eliminado de tu orden.
                   </p>
                   <button 
                     onClick={() => {
@@ -277,7 +313,7 @@ export const Checkout = () => {
                       setContactData({
                         phone: '',
                         subject: 'Pregunta sobre producto agotado',
-                        text: `Hola, me interesa el producto "${p.name}" que se agotó en mi carrito. ¿Cuándo lo volverán a tener en stock o cómo lo encargo por mayoreo?`
+                        text: `Hola, me interesa el producto "${p.name}" en talla "${p.size}" que se agotó en mi carrito. ¿Cuándo lo volverán a tener en stock o cómo lo encargo por mayoreo?`
                       });
                       setShowContactModal(true);
                     }}
@@ -468,7 +504,7 @@ export const Checkout = () => {
                       const brandsText = brandsArr.length > 0 ? brandsArr.join(' X ') : 'Sin Marca';
 
                       return (
-                        <li key={item.productId} className="p-4 sm:p-6 flex flex-col gap-3">
+                        <li key={`${item.productId}_${item.size}`} className="p-4 sm:p-6 flex flex-col gap-3">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                             <div className="h-20 w-20 flex-shrink-0 rounded-md border border-gray-200 dark:border-slate-700 overflow-hidden">
                               <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
@@ -487,7 +523,7 @@ export const Checkout = () => {
                               <div className="flex items-center bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-1">
                                 <button
                                   type="button"
-                                  onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                                  onClick={() => updateQuantity(item.productId, item.size, item.quantity - 1)}
                                   className="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded shadow-sm text-slate-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-transform"
                                 >
                                   <Minus className="h-4 w-4" />
@@ -497,7 +533,7 @@ export const Checkout = () => {
                                 
                                 <button
                                   type="button"
-                                  onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                                  onClick={() => updateQuantity(item.productId, item.size, item.quantity + 1)}
                                   disabled={item.quantity >= item.stockLimits}
                                   className="w-8 h-8 flex items-center justify-center bg-slate-900 dark:bg-slate-700 rounded shadow-sm text-white hover:bg-slate-800 dark:hover:bg-slate-600 active:scale-95 transition-transform disabled:opacity-50"
                                 >
@@ -507,7 +543,7 @@ export const Checkout = () => {
 
                               <button 
                                 type="button" 
-                                onClick={() => removeItem(item.productId)} 
+                                onClick={() => removeItem(item.productId, item.size)} 
                                 title="Eliminar producto"
                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                               >
@@ -516,10 +552,10 @@ export const Checkout = () => {
                             </div>
                           </div>
 
-                          {stockWarnings[item.productId] && (
+                          {stockWarnings[`${item.productId}_${item.size}`] && (
                             <div className="flex items-center space-x-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm font-bold border border-red-100 dark:border-red-900/30">
                               <AlertTriangle className="h-5 w-5 flex-shrink-0" />
-                              <span>{stockWarnings[item.productId]}</span>
+                              <span>{stockWarnings[`${item.productId}_${item.size}`]}</span>
                             </div>
                           )}
                         </li>
@@ -588,9 +624,50 @@ export const Checkout = () => {
                 ></textarea>
               </div>
 
-              <div className="border-t border-gray-200 dark:border-slate-800 pt-6 mt-6">
-                <div className="flex justify-between items-center mb-6">
-                  <span className="text-gray-600 dark:text-gray-300 font-medium">Total a Pagar</span>
+              <div className="mt-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                <label className="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center space-x-2 mb-2">
+                  <Tag className="h-4 w-4 text-blue-500" />
+                  <span>Código de Descuento</span>
+                </label>
+                
+                {appliedPromoCode ? (
+                  <div className="flex items-center justify-between bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/50 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg transition-colors">
+                    <span className="font-bold text-sm tracking-wide">CUPÓN: {appliedPromoCode}</span>
+                    <button type="button" onClick={removePromoCode} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs font-bold uppercase transition-colors">Quitar</button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex space-x-2">
+                      <input 
+                        type="text" 
+                        value={inputCode} 
+                        onChange={(e) => setInputCode(e.target.value.toUpperCase())} 
+                        placeholder="Ej. VERANO20" 
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none uppercase font-bold transition-colors" 
+                      />
+                      <button type="button" onClick={handleApplyCode} disabled={!inputCode.trim()} className="bg-slate-900 dark:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 transition-colors">Aplicar</button>
+                    </div>
+                    {promoError && <p className="text-red-500 dark:text-red-400 text-xs font-bold mt-2">{promoError}</p>}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-200 dark:border-slate-800 pt-6 mt-6 transition-colors">
+                
+                <div className="flex justify-between items-center mb-2 text-gray-500 dark:text-gray-400 font-medium">
+                  <span>Subtotal</span>
+                  <span>${(subTotal || total).toLocaleString('es-MX')}</span>
+                </div>
+                
+                {discountAmount > 0 && (
+                  <div className="flex justify-between items-center mb-3 text-green-600 dark:text-green-400 font-bold">
+                    <span>Descuento aplicado</span>
+                    <span>-${discountAmount.toLocaleString('es-MX')}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center mb-6 pt-3 border-t border-gray-100 dark:border-slate-800 transition-colors">
+                  <span className="text-gray-800 dark:text-gray-200 font-bold text-lg">Total a Pagar</span>
                   <span className="text-3xl font-extrabold text-slate-900 dark:text-white">${total.toLocaleString('es-MX')}</span>
                 </div>
 
@@ -599,7 +676,7 @@ export const Checkout = () => {
                   disabled={loading || checkingStock || !!cooldownError} 
                   className="w-full flex items-center justify-center space-x-2 bg-slate-900 dark:bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  {loading ? <span>Verificando seguridad...</span> : <><Send className="h-5 w-5" /><span>Confirmar Pedido</span></>}
+                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Send className="h-5 w-5" /><span>Confirmar Pedido</span></>}
                 </button>
               </div>
             </form>

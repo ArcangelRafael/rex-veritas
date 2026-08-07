@@ -85,6 +85,17 @@ export const ProductInventory = () => {
     }
   }, [dynamicCategories, filterCategory]);
 
+  const boostStats = useMemo(() => {
+    const stats = {};
+    products.forEach(p => {
+      if (p.isBoosted) {
+        const cat = p.category || 'Otros';
+        stats[cat] = (stats[cat] || 0) + 1;
+      }
+    });
+    return stats;
+  }, [products]);
+
   const getProductStats = (productId) => {
     const now = new Date();
     const productOrders = [];
@@ -144,6 +155,19 @@ export const ProductInventory = () => {
     });
   };
 
+  const handleToggleBoost = async (product) => {
+    try {
+      const newBoostState = !product.isBoosted;
+      await productService.updateProduct(product.id, { isBoosted: newBoostState });
+      setProducts(products.map(p => p.id === product.id ? { ...p, isBoosted: newBoostState } : p));
+      if (newBoostState) {
+        showSuccess(`¡"${product.name}" ha sido agregado a los Destacados!`);
+      }
+    } catch (error) {
+      showError("Error al cambiar el estado del Boost.");
+    }
+  };
+
   const startEditing = (product) => {
     setEditingProduct({
       ...product,
@@ -152,6 +176,8 @@ export const ProductInventory = () => {
       description: product.description || '',
       brands: product.brands?.length ? [...product.brands] : [product.brand || ''],
       imageUrls: product.imageUrls?.length ? [...product.imageUrls] : [product.imageUrl || ''],
+      // Cargamos el objeto stockSizes, asegurando compatibilidad por si el producto es antiguo
+      stockSizes: product.stockSizes || { XXL: 0, XL: 0, L: 0, M: 0, CH: 0, UNITALLA: product.stock || 0 },
       isBoosted: product.isBoosted || false,
       restockStatus: product.restockStatus || 'SOON', 
       restockDate: product.restockDate ? new Date(product.restockDate).toISOString().slice(0, 16) : '' 
@@ -163,6 +189,17 @@ export const ProductInventory = () => {
     setEditingProduct(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
+  const handleStockSizeChange = (sizeName, value) => {
+    const numValue = Math.max(0, Number(value));
+    setEditingProduct(prev => ({
+      ...prev,
+      stockSizes: {
+        ...prev.stockSizes,
+        [sizeName]: numValue
+      }
+    }));
+  };
+
   const handleArrayChange = (index, field, value) => {
     const newArray = [...editingProduct[field]];
     newArray[index] = value;
@@ -171,8 +208,9 @@ export const ProductInventory = () => {
   const addArrayField = (field) => setEditingProduct(prev => ({ ...prev, [field]: [...prev[field], ''] }));
   const removeArrayField = (index, field) => setEditingProduct(prev => ({ ...prev, [field]: editingProduct[field].filter((_, i) => i !== index) }));
 
-  // ESCUDO CONTRA BUG DE RESTOCK EN EDICIÓN
-  const hasStockEdit = editingProduct ? Number(editingProduct.stock) > 0 : false;
+  // CÁLCULO EN VIVO DEL STOCK TOTAL EN EDICIÓN
+  const totalStockEditCalculated = editingProduct ? Object.values(editingProduct.stockSizes).reduce((acc, curr) => acc + Number(curr), 0) : 0;
+  const hasStockEdit = totalStockEditCalculated > 0;
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -193,15 +231,14 @@ export const ProductInventory = () => {
         quality: editingProduct.quality,
         brand: cleanBrands[0], 
         brands: cleanBrands,
-        size: editingProduct.size,
+        stockSizes: editingProduct.stockSizes, // Objeto de tallas actualizado
         price: Number(editingProduct.price),
-        stock: Number(editingProduct.stock),
+        stock: totalStockEditCalculated, // Sumatoria automática
         imageUrl: cleanImageUrls[0], 
         imageUrls: cleanImageUrls,
         description: editingProduct.description,
         isActive: editingProduct.isActive,
         isBoosted: editingProduct.isBoosted,
-        // Limpieza automática en Firebase si hay stock
         restockStatus: hasStockEdit ? 'SOON' : editingProduct.restockStatus,
         restockDate: (!hasStockEdit && editingProduct.restockStatus === 'DATE') ? new Date(editingProduct.restockDate).toISOString() : ''
       };
@@ -215,6 +252,12 @@ export const ProductInventory = () => {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleCopyProductData = (product) => {
+    const textToCopy = `${product.name}\nID: ${product.id}\n[${product.category || 'Gorra'}] - ${product.quality || 'N/A'}`;
+    navigator.clipboard.writeText(textToCopy);
+    showSuccess("¡Datos del producto copiados al portapapeles!");
   };
 
   const renderCategory = (cat) => {
@@ -262,11 +305,14 @@ export const ProductInventory = () => {
       {modalConfig.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black bg-opacity-40 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-800">
-            <div className="flex flex-col items-center text-center">
+            <div className="flex flex-col items-center text-center relative">
+              {modalConfig.type !== 'confirm' && (
+                <button onClick={closeModal} className="absolute -top-2 -right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-100 dark:bg-slate-800 p-1.5 rounded-full transition-colors"><X className="h-5 w-5" /></button>
+              )}
               {modalConfig.type === 'error' && <AlertTriangle className="h-14 w-14 text-red-500 mb-4" />}
               {modalConfig.type === 'success' && <CheckCircle2 className="h-14 w-14 text-green-500 mb-4" />}
               {modalConfig.type === 'confirm' && <Info className="h-14 w-14 text-blue-500 mb-4" />}
-              <p className="text-gray-800 dark:text-white font-medium text-lg mb-6">{modalConfig.message}</p>
+              <p className="text-gray-800 dark:text-gray-200 font-medium text-lg mb-6">{modalConfig.message}</p>
               <div className="flex w-full space-x-3">
                 {modalConfig.type === 'confirm' ? (
                   <>
@@ -274,11 +320,23 @@ export const ProductInventory = () => {
                     <button onClick={modalConfig.onConfirm} className="flex-1 py-2.5 px-4 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors">Eliminar</button>
                   </>
                 ) : (
-                  <button onClick={closeModal} className="w-full py-2.5 px-4 bg-slate-900 dark:bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors">Entendido</button>
+                  <button onClick={closeModal} className="w-full py-2.5 px-4 bg-slate-900 dark:bg-blue-600 text-white font-bold rounded-xl hover:bg-slate-800 dark:hover:bg-blue-700 transition-colors">Entendido</button>
                 )}
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {Object.keys(boostStats).length > 0 && (
+        <div className="flex items-center space-x-3 overflow-x-auto pb-2 hide-scrollbar">
+          <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest whitespace-nowrap">En Marketing:</span>
+          {Object.entries(boostStats).map(([cat, count]) => (
+            <span key={cat} className="whitespace-nowrap inline-flex items-center space-x-1.5 text-xs font-bold bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400 px-3 py-1.5 rounded-full border border-blue-200 dark:border-slate-700 shadow-sm">
+              <Rocket className="h-3 w-3" />
+              <span>{cat}: {count}</span>
+            </span>
+          ))}
         </div>
       )}
 
@@ -332,7 +390,7 @@ export const ProductInventory = () => {
           <thead>
             <tr className="bg-slate-900 dark:bg-slate-950 text-white text-xs uppercase tracking-wider">
               <th className="p-4 font-medium">Producto</th>
-              <th className="p-4 font-medium text-center">Visible</th>
+              <th className="p-4 font-medium text-center">Estado / Visibilidad</th>
               <th className="p-4 font-medium text-center">Stock</th>
               <th className="p-4 font-medium text-center">Clasificación</th>
               <th className="p-4 font-medium text-center">Tendencia</th>
@@ -367,7 +425,18 @@ export const ProductInventory = () => {
                       
                       <div>
                         <p className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">{product.name}</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 font-mono">ID: {product.id}</p>
+                        
+                        <div className="flex items-center space-x-1 mt-0.5">
+                          <p className="text-xs text-gray-400 dark:text-gray-500 font-mono">ID: {product.id}</p>
+                          <button
+                            onClick={() => handleCopyProductData(product)}
+                            className="text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 p-1 rounded transition-colors hover:bg-blue-50 dark:hover:bg-slate-800"
+                            title="Copiar datos para Marketing"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        </div>
+
                         <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-0.5 uppercase tracking-wider">
                           [{product.category || 'Gorra'}] - {product.quality || 'N/A'}
                         </p>
@@ -375,18 +444,31 @@ export const ProductInventory = () => {
                     </div>
                   </td>
 
-                  <td className="p-4 text-center">
-                    {product.isActive ? (
-                      <span className="inline-flex items-center space-x-1 text-xs font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full">
-                        <Eye className="h-3 w-3" />
-                        <span>Sí</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center space-x-1 text-xs font-bold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-1 rounded-full">
-                        <EyeOff className="h-3 w-3" />
-                        <span>No</span>
-                      </span>
-                    )}
+                  <td className="p-4">
+                    <div className="flex flex-col items-center justify-center space-y-2">
+                      {product.isActive ? (
+                        <span className="inline-flex items-center space-x-1 text-[10px] font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full uppercase">
+                          <Eye className="h-3 w-3" /> <span>Visible</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center space-x-1 text-[10px] font-bold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full uppercase">
+                          <EyeOff className="h-3 w-3" /> <span>Oculto</span>
+                        </span>
+                      )}
+
+                      <div 
+                        className={`flex items-center space-x-1.5 px-2 py-1 rounded-lg border transition-colors ${product.isBoosted ? 'bg-blue-50 border-blue-200 dark:bg-slate-800 dark:border-slate-600' : 'bg-gray-50 border-gray-200 dark:bg-slate-800/50 dark:border-slate-700'}`}
+                        title="Activar o Desactivar Boost (Carrusel Inicio)"
+                      >
+                        <Rocket className={`h-3 w-3 ${product.isBoosted ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500'}`} />
+                        <button
+                          onClick={() => handleToggleBoost(product)}
+                          className={`relative inline-flex h-3.5 w-7 items-center rounded-full transition-colors ${product.isBoosted ? 'bg-blue-500' : 'bg-gray-300 dark:bg-slate-600'}`}
+                        >
+                          <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${product.isBoosted ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        </button>
+                      </div>
+                    </div>
                   </td>
 
                   <td className="p-4 text-center">
@@ -436,6 +518,7 @@ export const ProductInventory = () => {
         )}
       </div>
 
+      {/* MODAL DE EDICIÓN CON LA CUADRÍCULA DE TALLAS */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl my-8 max-h-[90vh] flex flex-col border border-transparent dark:border-slate-800">
@@ -476,26 +559,43 @@ export const ProductInventory = () => {
                   <input type="text" name="name" required value={editingProduct.name} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none transition-colors" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Talla</label>
-                  <input type="text" name="size" required value={editingProduct.size} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none transition-colors" />
-                </div>
-                <div>
                   <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Precio (MXN)</label>
                   <input type="number" name="price" required min="0" value={editingProduct.price} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none transition-colors" />
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Stock</label>
-                  <input type="number" name="stock" required min="0" value={editingProduct.stock} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded-lg outline-none transition-colors" />
+
+                {/* CUADRÍCULA DE TALLAS EN EL MODAL DE EDICIÓN */}
+                <div className="md:col-span-2 bg-gray-50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Inventario por Tallas</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                    {Object.keys(editingProduct.stockSizes).map(sizeLabel => (
+                      <div key={sizeLabel} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-3 flex flex-col items-center justify-center shadow-sm">
+                        <span className="text-xs font-black text-slate-800 dark:text-slate-200 mb-2 uppercase tracking-widest">{sizeLabel}</span>
+                        <input 
+                          type="number" 
+                          min="0"
+                          value={editingProduct.stockSizes[sizeLabel] === 0 ? '' : editingProduct.stockSizes[sizeLabel]} 
+                          onChange={(e) => handleStockSizeChange(sizeLabel, e.target.value)}
+                          placeholder="0"
+                          className="w-16 text-center font-bold px-2 py-1 border border-gray-300 dark:border-slate-600 rounded bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-right">
+                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Stock Total: </span>
+                    <span className={`text-sm font-black ml-1 ${totalStockEditCalculated > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-500'}`}>
+                      {totalStockEditCalculated} unidades
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* PANEL DE RESTOCK EN EDICIÓN (BLOQUEO CONDICIONAL) */}
               <div className={`bg-gray-50 dark:bg-slate-800/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700 transition-colors mt-4 ${hasStockEdit ? 'opacity-60 pointer-events-none' : ''}`}>
                 
                 {hasStockEdit && (
                   <div className="mb-4 flex items-center space-x-2 text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 p-2.5 rounded-lg border border-red-200 dark:border-red-800/50">
                     <AlertTriangle className="h-4 w-4" />
-                    <span>Cambia el stock a 0 para configurar el reabastecimiento.</span>
+                    <span>Cambia el stock total a 0 para configurar el reabastecimiento.</span>
                   </div>
                 )}
 
@@ -590,7 +690,6 @@ export const ProductInventory = () => {
               </div>
 
               <div className="flex flex-col space-y-3 pt-2 border-t border-gray-100 dark:border-slate-800">
-                
                 <div className="flex items-center space-x-2">
                   <input 
                     type="checkbox" 
